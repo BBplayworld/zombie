@@ -14,6 +14,7 @@ export interface Animation {
     name: string
     frames: SpriteFrame[]
     frameRate: number // frames per second
+    loop?: boolean
 }
 
 export class SpriteAnimation {
@@ -22,6 +23,7 @@ export class SpriteAnimation {
     private currentFrameIndex: number = 0
     private frameTimer: number = 0
     private isPlaying: boolean = false
+    private onComplete: (() => void) | null = null
 
     /**
      * 애니메이션 추가
@@ -43,8 +45,17 @@ export class SpriteAnimation {
             this.currentAnimation = animationName
             this.currentFrameIndex = 0
             this.frameTimer = 0
+            this.onComplete = null
         }
         this.isPlaying = true
+    }
+
+    /**
+     * 애니메이션 재생 (한 번만)
+     */
+    playOnce(animationName: string, onComplete?: () => void): void {
+        this.play(animationName, true)
+        this.onComplete = onComplete || null
     }
 
     /**
@@ -76,8 +87,19 @@ export class SpriteAnimation {
 
         const frameDuration = 1 / animation.frameRate
         if (this.frameTimer >= frameDuration) {
-            this.frameTimer -= frameDuration
-            this.currentFrameIndex = (this.currentFrameIndex + 1) % animation.frames.length
+            this.frameTimer = 0 // 정확한 타이밍을 위해 누적하지 않고 리셋 (간단한 구현)
+
+            if (this.currentFrameIndex + 1 >= animation.frames.length) {
+                if (animation.loop !== false) {
+                    this.currentFrameIndex = 0
+                } else {
+                    this.isPlaying = false
+                    if (this.onComplete) this.onComplete()
+                    this.onComplete = null // 콜백 초기화
+                }
+            } else {
+                this.currentFrameIndex++
+            }
         }
     }
 

@@ -55,6 +55,33 @@ export interface GameplayConfig {
     // true일 경우: 방향키 입력이 다이아몬드 맵 축에 맞춰 변환됨 (예: 왼쪽 키 -> 좌하단 이동)
     // false일 경우: 방향키 입력 그대로 화면 상하좌우 이동
     enableIsoInput?: boolean
+
+    // 몬스터 설정
+    monsterConfig?: MonsterConfig
+}
+
+export interface MonsterConfig {
+    spawnCount: number        // 맵에 존재하는 최대 몬스터 수
+    regenTime: number         // 처치 후 리젠 시간 (초)
+    autoAttack: boolean       // 플레이어 자동 공격 여부
+}
+
+export interface AssetConfig {
+    baseTile: string
+    backgroundTile: string
+    player: string
+    fight: string
+    bg1: string
+}
+
+export interface MonsterDetailConfig {
+    id: string           // 리소스 로드 키로도 사용 (예: 'mon_1')
+    name: string
+    imagePath: string
+    moveSpeed: number
+    autoAttack: boolean
+    regenTime: number    // 초 단위
+    detectionRange: number
 }
 
 export interface ChapterConfig {
@@ -63,6 +90,8 @@ export interface ChapterConfig {
     tileMapConfig: TileMapConfig
     gameplayConfig: GameplayConfig
     mapData: MapData
+    assetConfig: AssetConfig
+    monsters: MonsterDetailConfig[]
 }
 
 /**
@@ -84,11 +113,70 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
         },
         gameplayConfig: {
             mapGenerationRatio: 0.7, // 맵의 70%를 바닥으로 생성
-            baseSpeed: 8,           // 캐릭터 기본 이동 속도 (10 유지)
-            collisionYOffset: 80,    // 충돌 판정 오프셋 (80~90 권장)
+            baseSpeed: 8,           // 캐릭터 기본 이동 속도
+            collisionYOffset: 80,    // 충돌 판정 오프셋
             collisionAllowance: 0,   // 이동 불가 타일 허용 범위
-            enableIsoInput: true     // 아이소메트릭 입력 변환 켜기 (자연스러운 타일 이동)
+            enableIsoInput: true,     // 아이소메트릭 입력 변환 켜기
+            monsterConfig: {          // 전역 몬스터 스폰 설정
+                spawnCount: 15,
+                regenTime: 60,
+                autoAttack: false
+            }
         },
+        assetConfig: {
+            baseTile: '/assets/chapter-1/tile/basetile-1.png',
+            backgroundTile: '/assets/chapter-1/tile/basetile-2.png',
+            player: '/assets/chapter-1/player/player.png',
+            fight: '/assets/chapter-1/player/fight.png',
+            bg1: '/assets/chapter-1/background/bg-1.png'
+        },
+        monsters: [
+            {
+                id: 'mon_1',
+                name: 'Walker',
+                imagePath: '/assets/chapter-1/monster/mon-1.png',
+                moveSpeed: 3,
+                autoAttack: false,
+                regenTime: 30,
+                detectionRange: 150
+            },
+            {
+                id: 'mon_2',
+                name: 'Runner',
+                imagePath: '/assets/chapter-1/monster/mon-2.png',
+                moveSpeed: 6,
+                autoAttack: true,
+                regenTime: 45,
+                detectionRange: 200
+            },
+            {
+                id: 'mon_3',
+                name: 'Tank',
+                imagePath: '/assets/chapter-1/monster/mon-3.png',
+                moveSpeed: 2,
+                autoAttack: true,
+                regenTime: 60,
+                detectionRange: 100
+            },
+            {
+                id: 'mon_4',
+                name: 'Ghost',
+                imagePath: '/assets/chapter-1/monster/mon-2.png',
+                moveSpeed: 4,
+                autoAttack: false,
+                regenTime: 40,
+                detectionRange: 180
+            },
+            {
+                id: 'mon_5',
+                name: 'Boss',
+                imagePath: '/assets/chapter-1/monster/mon-3.png',
+                moveSpeed: 5,
+                autoAttack: true,
+                regenTime: 120,
+                detectionRange: 300
+            }
+        ],
         // 맵 데이터 생성 (설정값 주입)
         mapData: createChapter1MapData(160, 160, 0.7)
     }
@@ -112,6 +200,9 @@ function createChapter1MapData(width: number, height: number, ratio: number = 0.
     // Random Walker 알고리즘을 이용한 자연스러운 맵 생성
     const centerX = Math.floor(width / 2)
     const centerY = Math.floor(height / 2)
+
+    // 시작 위치는 무조건 이동 가능해야 함
+    tiles[centerY][centerX] = 1
 
     let x = centerX
     let y = centerY

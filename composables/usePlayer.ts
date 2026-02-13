@@ -18,6 +18,10 @@ export class Player {
   public isMoving: boolean = false
   public direction: 'idle' | 'up' | 'down' | 'left' | 'right' = 'down'
 
+  // 전투 상태
+  public isAttacking: boolean = false
+  private fightImage: HTMLImageElement | null = null
+
   // 스프라이트 애니메이션
   private spriteAnimation: SpriteAnimation
   private spriteImage: HTMLImageElement | null = null
@@ -38,54 +42,6 @@ export class Player {
     this.setupAnimations()
   }
 
-  /**
-   * 스프라이트 애니메이션 설정
-   * 3x3 그리드: 각 행은 방향(down, left, right), 각 열은 걷기 프레임
-   */
-  private setupAnimations(): void {
-    const frameWidth = 341  // 1024 / 3
-    const frameHeight = 341 // 1024 / 3
-
-    // 아래 방향 (첫 번째 행)
-    this.spriteAnimation.addAnimation({
-      name: 'walk_down',
-      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3),
-      frameRate: 8
-    })
-
-    // 왼쪽 방향 (두 번째 행)
-    this.spriteAnimation.addAnimation({
-      name: 'walk_left',
-      frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3),
-      frameRate: 8
-    })
-
-    // 오른쪽 방향 (세 번째 행)
-    this.spriteAnimation.addAnimation({
-      name: 'walk_right',
-      frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 3, 3),
-      frameRate: 8
-    })
-
-    // idle 애니메이션 (각 방향의 첫 프레임만 사용)
-    this.spriteAnimation.addAnimation({
-      name: 'idle_down',
-      frames: [createFramesFromGrid(0, 0, frameWidth, frameHeight, 1, 3)[0]],
-      frameRate: 1
-    })
-
-    this.spriteAnimation.addAnimation({
-      name: 'idle_left',
-      frames: [createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 1, 3)[0]],
-      frameRate: 1
-    })
-
-    this.spriteAnimation.addAnimation({
-      name: 'idle_right',
-      frames: [createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 1, 3)[0]],
-      frameRate: 1
-    })
-  }
 
   /**
    * 스프라이트 이미지 설정
@@ -119,7 +75,7 @@ export class Player {
         const nInputX = moveX / inputMag
         const nInputY = moveY / inputMag
 
-        const lookAhead = 40
+        const lookAhead = 20
         const offset = config.gameplayConfig.collisionYOffset
         const allowance = config.gameplayConfig.collisionAllowance || 0
 
@@ -212,50 +168,180 @@ export class Player {
     }
   }
 
-  /**
-   * 플레이어 위치 업데이트
-   */
+  private setupAnimations(): void {
+    const frameWidth = 341
+    const frameHeight = 341
+
+    // Walk animations
+    this.spriteAnimation.addAnimation({
+      name: 'walk_down',
+      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3),
+      frameRate: 8
+    })
+    this.spriteAnimation.addAnimation({
+      name: 'walk_left',
+      frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3),
+      frameRate: 8
+    })
+    this.spriteAnimation.addAnimation({
+      name: 'walk_right',
+      frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 3, 3),
+      frameRate: 8
+    })
+
+    // Idle animations
+    this.spriteAnimation.addAnimation({
+      name: 'idle_down',
+      frames: [createFramesFromGrid(0, 0, frameWidth, frameHeight, 1, 3)[0]],
+      frameRate: 1
+    })
+    this.spriteAnimation.addAnimation({
+      name: 'idle_left',
+      frames: [createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 1, 3)[0]],
+      frameRate: 1
+    })
+    this.spriteAnimation.addAnimation({
+      name: 'idle_right',
+      frames: [createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 1, 3)[0]],
+      frameRate: 1
+    })
+
+    // Attack animations (assuming same grid layout for fight.png)
+    this.spriteAnimation.addAnimation({
+      name: 'attack_down',
+      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3), // Using 3 frames for attack
+      frameRate: 12,
+      loop: false
+    })
+    this.spriteAnimation.addAnimation({
+      name: 'attack_left',
+      frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3),
+      frameRate: 12,
+      loop: false
+    })
+    this.spriteAnimation.addAnimation({
+      name: 'attack_right',
+      frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 3, 3),
+      frameRate: 12,
+      loop: false
+    })
+  }
+
+  setFightImage(image: HTMLImageElement): void {
+    this.fightImage = image
+
+    // 전투 이미지를 로드하면 해당 이미지 크기에 맞춰 애니메이션 재설정 (5x5 그리드)
+    const totalWidth = image.naturalWidth
+    const totalHeight = image.naturalHeight
+    const cols = 5
+    const rows = 5
+
+    const frameWidth = totalWidth / cols
+    const frameHeight = totalHeight / rows
+
+    // Attack animations
+    // Row 0: Attack Down
+    this.spriteAnimation.addAnimation({
+      name: 'attack_down',
+      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 5, cols), // 5 frames
+      frameRate: 12,
+      loop: false
+    })
+
+    // Row 1: Attack Left
+    this.spriteAnimation.addAnimation({
+      name: 'attack_left',
+      frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 5, cols),
+      frameRate: 12,
+      loop: false
+    })
+
+    // Row 2: Attack Right
+    this.spriteAnimation.addAnimation({
+      name: 'attack_right',
+      frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 5, cols),
+      frameRate: 12,
+      loop: false
+    })
+
+    // Row 3: Attack Up (if available, otherwise re-use Left/Right or specific logic)
+    // Assuming standard 4-dir might use row 3 for UP if 5 rows exist?
+    // Let's assume Row 3 is UP.
+    this.spriteAnimation.addAnimation({
+      name: 'attack_up',
+      frames: createFramesFromGrid(0, frameHeight * 3, frameWidth, frameHeight, 5, cols),
+      frameRate: 12,
+      loop: false
+    })
+  }
+
+  // ... existing code ...
+
+  attack(): void {
+    if (this.isAttacking) return
+
+    this.isAttacking = true
+    this.isMoving = false // Stop moving when attacking
+    this.velocity.x = 0
+    this.velocity.y = 0
+
+    // Up might use a dedicated row if we configured it, otherwise fallback
+    let dir = this.direction
+    if (dir === 'up') dir = 'up' // use explicit up animation
+
+    // If we didn't add 'attack_up' to animations list (which I did in previous step), 
+    // we need to make sure we use it.
+    // However, setupAnimations() added 'attack_down', 'attack_left', 'attack_right'.
+    // setFightImage() added 'attack_up'.
+
+    // If fight image is not loaded yet, we might crash if we try to play 'attack_up'. 
+    // But attack() checks isAttacking logic.
+
+    const animName = `attack_${dir}`
+    this.spriteAnimation.playOnce(animName, () => {
+      this.isAttacking = false
+      // Return to idle animation
+      const idleAnim = `idle_${this.direction === 'up' ? 'left' : this.direction}`
+      this.spriteAnimation.play(idleAnim)
+    })
+  }
+
   update(deltaTime: number = 0.016): void {
-    // 이동 전 위치 저장
+    // Attack state update
+    if (this.isAttacking) {
+      this.spriteAnimation.update(deltaTime)
+      return
+    }
+
+    // ... existing movement logic ...
     const oldX = this.position.x
     const oldY = this.position.y
 
-    // 타일맵이 있으면 이동 가능 여부 체크 (이동 가능한 타일만)
     if (this.tileMap) {
-      // 챕터 설정에서 값 가져오기
       const config = getChapterConfig(1)
       const offset = config.gameplayConfig.collisionYOffset
       const allowance = config.gameplayConfig.collisionAllowance || 0
-
-      // Delta Time 보정 (60fps 기준)
-      // 프레임이 떨어져도 이동 거리를 보정하여 부드럽게 유지
       const timeScale = deltaTime * 60
 
-      // X축 이동 시도 (벽 슬라이딩을 위해 축 분리)
       const moveX = this.velocity.x * timeScale
       const nextX = this.position.x + moveX
 
-      // 현재 Y위치에서 X만 이동했을 때 가능한가? (allowance 적용)
       if (this.tileMap.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
         this.position.x = nextX
       }
 
-      // Y축 이동 시도 (X가 이미 이동했을 수 있음 - 자연스러운 슬라이딩)
       const moveY = this.velocity.y * timeScale
       const nextY = this.position.y + moveY
 
-      // 현재 X위치(갱신됨)에서 Y만 이동했을 때 가능한가? (allowance 적용)
       if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
         this.position.y = nextY
       }
     } else {
-      // 타일맵이 없으면 자유롭게 이동 (Delta Time 적용)
       const timeScale = deltaTime * 60
       this.position.x += this.velocity.x * timeScale
       this.position.y += this.velocity.y * timeScale
     }
 
-    // 애니메이션 업데이트
     if (this.isMoving) {
       const animName = `walk_${this.direction}`
       this.spriteAnimation.play(animName)
@@ -267,9 +353,6 @@ export class Player {
     this.spriteAnimation.update(deltaTime)
   }
 
-  /**
-   * 플레이어 렌더링
-   */
   render(
     ctx: CanvasRenderingContext2D,
     image: HTMLImageElement | undefined,
@@ -279,31 +362,24 @@ export class Player {
     ctx.save()
     ctx.translate(screenX, screenY)
 
-    // 스프라이트 이미지가 있으면 애니메이션 렌더링
-    if (this.spriteImage && this.spriteImage.complete && this.spriteImage.naturalWidth !== 0) {
+    // Use fight image if attacking, otherwise normal sprite image
+    const currentImage = (this.isAttacking && this.fightImage) ? this.fightImage : (this.spriteImage || image)
+
+    if (currentImage && currentImage.complete && currentImage.naturalWidth !== 0) {
       const frame = this.spriteAnimation.getCurrentFrame()
 
       if (frame) {
         ctx.drawImage(
-          this.spriteImage,
+          currentImage,
           frame.x, frame.y, frame.width, frame.height,
           -this.width / 2, -this.height / 2, this.width, this.height
         )
       }
     }
-    // Fallback: 기존 단일 이미지
-    else if (image && image.complete && image.naturalWidth !== 0) {
-      ctx.drawImage(
-        image,
-        -this.width / 2,
-        -this.height / 2,
-        this.width,
-        this.height
-      )
-    }
     // Fallback: 빨간 원
     else {
       ctx.fillStyle = '#ff4444'
+      // ... existing fallback ...
       ctx.beginPath()
       ctx.arc(0, 0, 25, 0, Math.PI * 2)
       ctx.fill()
@@ -311,7 +387,6 @@ export class Player {
       ctx.lineWidth = 2
       ctx.stroke()
 
-      // 방향 표시
       ctx.beginPath()
       ctx.moveTo(0, 0)
       ctx.lineTo(Math.cos(this.angle) * 30, Math.sin(this.angle) * 30)

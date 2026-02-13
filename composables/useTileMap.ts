@@ -154,7 +154,7 @@ export class TileMap {
    * - X 간격: TILE_WIDTH_HALF (64px)
    * - Y 간격: Y_SPACING (설정 가능)
    */
-  private gridToWorld(gridX: number, gridY: number): { x: number; y: number } {
+  public gridToWorld(gridX: number, gridY: number): { x: number; y: number } {
     return {
       x: (gridX - gridY) * this.TILE_WIDTH_HALF,
       y: (gridX + gridY) * this.Y_SPACING

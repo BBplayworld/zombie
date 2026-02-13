@@ -1,5 +1,6 @@
 import { Camera } from './useCamera'
 import { Player } from './usePlayer'
+import { Monster } from './useMonster'
 import { TileMap } from './useTileMap'
 import { InputManager } from './useInputManager'
 import { ResourceLoader } from './useResourceLoader'
@@ -14,6 +15,7 @@ export class GameEngine {
   private ctx: CanvasRenderingContext2D
   private camera: Camera
   private player: Player
+  public monsters: Monster[] = []
   private tileMap: TileMap
   private inputManager: InputManager
   public resourceLoader: ResourceLoader
@@ -57,6 +59,11 @@ export class GameEngine {
     this.player = new Player(startPos.x, startPos.y)
 
     this.inputManager = new InputManager()
+    this.inputManager.onKeyDown('Space', () => {
+      if (this.state === 'playing') {
+        this.player.attack()
+      }
+    })
     this.resourceLoader = new ResourceLoader()
   }
 
@@ -66,17 +73,20 @@ export class GameEngine {
   async loadResources(): Promise<void> {
     this.state = 'loading'
 
-    const imageMap = {
-      baseTile: '/zombie/assets/tile/basetile-1.png',        // 이동 가능한 길
-      backgroundTile: '/zombie/assets/tile/basetile-2.png', // 배경 타일
-      player: '/zombie/assets/player/player.png',
-      bg1: '/zombie/assets/background/bg-1.png'        // 전체 배경
-    }
-
-    await this.resourceLoader.loadImages(imageMap)
+    this.state = 'loading'
 
     // 챕터 설정 로드
     const chapterConfig = getChapterConfig(this.currentChapter)
+
+    // 에셋 설정 가져오기
+    const imageMap: Record<string, string> = { ...chapterConfig.assetConfig }
+
+    // 몬스터 이미지 추가
+    chapterConfig.monsters.forEach(m => {
+      imageMap[m.id] = m.imagePath
+    })
+
+    await this.resourceLoader.loadImages(imageMap)
 
     // 이미지를 타일맵에 설정
     this.tileMap.setImages(this.resourceLoader.getImages())
@@ -98,6 +108,14 @@ export class GameEngine {
       this.player.setSpriteImage(playerSprite)
     }
 
+    const fightSprite = this.resourceLoader.getImage('fight')
+    if (fightSprite) {
+      this.player.setFightImage(fightSprite)
+    }
+
+    // 몬스터 스폰
+    this.spawnMonsters()
+
     console.log('All resources loaded!')
     console.log(`Chapter ${this.currentChapter}: ${chapterConfig.name}`)
     console.log(`Map size: ${chapterConfig.mapData.width}x${chapterConfig.mapData.height}`)
@@ -109,6 +127,11 @@ export class GameEngine {
     this.player.update(0) // 초기 애니메이션 상태 설정
     this.render()
   }
+
+  /**
+   * 몬스터 스폰
+   */
+
 
   /**
    * 게임 시작
@@ -157,6 +180,38 @@ export class GameEngine {
     // 플레이어 업데이트
     this.player.update(this.deltaTime)
 
+    // 몬스터 업데이트 & 리젠 관리
+    const config = getChapterConfig(this.currentChapter)
+    const targetCount = config.gameplayConfig.monsterConfig?.spawnCount || 0
+
+    // 죽은 몬스터 제거
+    this.monsters = this.monsters.filter(m => !m.isDead)
+
+    // 몬스터 업데이트
+    this.monsters.forEach(monster => monster.update(this.deltaTime))
+
+    // 리젠 로직
+    // 초기 스폰이 끝난 후(ready 상태 아님), playing 상태에서만 동작
+    if (this.state === 'playing') {
+      const needed = targetCount - this.monsters.length
+
+      if (needed > 0) {
+        // 리젠 타이머 체크
+        if (!this.lastRegenCheckTime) {
+          this.lastRegenCheckTime = performance.now()
+        }
+
+        // 설정된 리젠 시간마다 체크 (기본 1초)
+        const regenInterval = (config.gameplayConfig.monsterConfig?.regenTime || 1) * 1000
+
+        if (performance.now() - this.lastRegenCheckTime > regenInterval) {
+          this.lastRegenCheckTime = performance.now()
+          // 즉시 스폰
+          this.spawnMonsters(needed)
+        }
+      }
+    }
+
     // 카메라 업데이트
     this.camera.follow(this.player.position)
 
@@ -164,6 +219,71 @@ export class GameEngine {
     this.tileMap.updateVisibleTiles(this.camera)
   }
 
+  private lastRegenCheckTime: number = 0;
+
+  /**
+   * 몬스터 스폰
+   */
+  private spawnMonsters(countToSpawn: number = 0): void {
+    const config = getChapterConfig(this.currentChapter)
+    const targetCount = countToSpawn > 0 ? countToSpawn : (config.gameplayConfig.monsterConfig?.spawnCount || 0)
+    const mapData = config.mapData
+
+    // 초기 스폰인 경우(countToSpawn == 0 또는 호출 시점) 배열 초기화 여부 결정
+    // 여기서는 단순히 추가하는 로직으로 변경.
+    // 만약 초기화가 필요하다면 외부에서 this.monsters = [] 하고 호출해야 함.
+    // 하지만 GameEngine 구조상 loadResources에서만 전체 초기화 하므로, 
+    // 여기서는 '추가' 로직으로 동작하는 것이 안전함.
+
+    if (targetCount <= 0) return
+
+    let count = 0
+    let attempts = 0
+    // 무한 루프 방지
+    const maxAttempts = targetCount * 50
+
+    while (count < targetCount && attempts < maxAttempts) {
+      attempts++
+      const gx = Math.floor(Math.random() * mapData.width)
+      const gy = Math.floor(Math.random() * mapData.height)
+
+      if (this.tileMap.isWalkable(gx, gy)) {
+        // 플레이어 시작 위치와 안전 거리 확보 (5칸)
+        const dx = gx - mapData.startPosition.x
+        const dy = gy - mapData.startPosition.y
+
+        // 플레이어 현재 위치와도 안전 거리 확보 (500px)
+        const worldPos = this.tileMap.gridToWorld(gx, gy)
+        const distToPlayer = Math.sqrt(
+          Math.pow(worldPos.x - this.player.position.x, 2) +
+          Math.pow(worldPos.y - this.player.position.y, 2)
+        )
+
+        // 시작 지점 근처거나, 플레이어 바로 옆이면 스킵
+        if ((Math.abs(dx) < 5 && Math.abs(dy) < 5) || distToPlayer < 500) continue
+
+        // 몬스터 종류 랜덤 선택
+        const monsterConfigs = config.monsters
+        if (!monsterConfigs || monsterConfigs.length === 0) continue
+
+        const mConfig = monsterConfigs[Math.floor(Math.random() * monsterConfigs.length)]
+
+        // 몬스터 생성 (ID는 유니크하게)
+        const uniqueId = `mon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        const monster = new Monster(uniqueId, worldPos.x, worldPos.y, mConfig)
+        monster.setTileMap(this.tileMap)
+
+        // 이미지 설정
+        const monImg = this.resourceLoader.getImage(mConfig.id)
+
+        if (monImg) monster.setSpriteImage(monImg)
+
+        this.monsters.push(monster)
+        count++
+      }
+    }
+    if (count > 0) console.log(`Spawned ${count} monsters.`)
+  }
   /**
    * 게임 렌더링
    */
@@ -203,13 +323,27 @@ export class GameEngine {
     // 1. 타일맵 렌더링 (맵 내부)
     this.tileMap.render(this.ctx, this.camera)
 
-    // 2. 플레이어 렌더링
-    const playerScreenPos = this.camera.worldToScreen(
-      this.player.position.x,
-      this.player.position.y
-    )
+    // 2. 엔티티 렌더링 (플레이어 + 몬스터) - Y축 정렬 (Z-Sorting)
+    // Y좌표가 작을수록(멀수록) 먼저 그려야 함 -> 오름차순 정렬
+    const entities = [this.player, ...this.monsters]
+    entities.sort((a, b) => a.position.y - b.position.y)
+
     const playerImage = this.resourceLoader.getImage('player')
-    this.player.render(this.ctx, playerImage, playerScreenPos.x, playerScreenPos.y)
+    const monsterImage = this.resourceLoader.getImage('monster')
+
+    entities.forEach(entity => {
+      if (entity instanceof Player) {
+        // 플레이어 렌더링
+        const screenPos = this.camera.worldToScreen(entity.position.x, entity.position.y)
+        // Player.render는 ctx, image, sx, sy를 받음
+        entity.render(this.ctx, playerImage, screenPos.x, screenPos.y)
+      } else if (entity instanceof Monster) {
+        // 몬스터 렌더링
+        if (monsterImage) entity.setSpriteImage(monsterImage)
+        // Monster.render는 ctx, camera를 받음
+        entity.render(this.ctx, this.camera)
+      }
+    })
 
     this.ctx.restore()
 
