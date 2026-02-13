@@ -1,0 +1,21 @@
+{
+  "name": "zombie-mmorpg",
+  "version": "1.0.0",
+  "description": "Canvas-based Quarter-view Zombie MMORPG Open World Game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "nuxt": "^3.14.159",
+    "vue": "latest"
+  },
+  "devDependencies": {
+    "@nuxt/devtools": "latest"
+  }
+}
