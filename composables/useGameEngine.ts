@@ -67,9 +67,10 @@ export class GameEngine {
     this.state = 'loading'
 
     const imageMap = {
-      baseTile: '/zombie/assets/base-tile.png',        // 이동 가능한 길
-      backgroundTile: '/zombie/assets/base-tile2.png', // 배경 타일
-      player: '/zombie/assets/player.png',
+      baseTile: '/zombie/assets/tile/basetile-1.png',        // 이동 가능한 길
+      backgroundTile: '/zombie/assets/tile/basetile-2.png', // 배경 타일
+      player: '/zombie/assets/player/player.png',
+      bg1: '/zombie/assets/background/bg-1.png'        // 전체 배경
     }
 
     await this.resourceLoader.loadImages(imageMap)
@@ -173,7 +174,33 @@ export class GameEngine {
 
     this.ctx.save()
 
-    // 1. 타일맵 렌더링 (배경)
+    // 0. 배경 이미지 렌더링 (전체 맵 바깥 영역)
+    const images = this.resourceLoader.getImages()
+    const bgImage = images.get('bg1')
+    if (bgImage && bgImage.complete && bgImage.naturalWidth > 0) {
+      // 백그라운드 패턴 생성
+      const ptrn = this.ctx.createPattern(bgImage, 'repeat')
+      if (ptrn) {
+        this.ctx.fillStyle = ptrn
+        // 캔버스 크기만큼 채우되, 카메라 이동에 맞춰 패턴 위치 조정 (패럴랙스 X, 월드 고정)
+        // 패턴의 시작점을 조정하여 카메라 이동 시 배경이 고정된 것처럼 보이게 함
+
+        // 패턴 오프셋 설정 (setTransform 사용 가능하지만 복잡함)
+        // 대신 큰 영역을 그리고 fillRect 위치를 조정
+
+        // 간단히: 
+        this.ctx.save()
+        // 패턴 변환 행렬 설정 (카메라 반대 방향으로 이동하여 월드에 고정)
+        const matrix = new DOMMatrix()
+        matrix.translateSelf(-this.camera.position.x, -this.camera.position.y)
+        ptrn.setTransform(matrix)
+
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+        this.ctx.restore()
+      }
+    }
+
+    // 1. 타일맵 렌더링 (맵 내부)
     this.tileMap.render(this.ctx, this.camera)
 
     // 2. 플레이어 렌더링

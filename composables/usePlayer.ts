@@ -1,6 +1,7 @@
 import { Vector2 } from './useGameMath'
 import { SpriteAnimation, createFramesFromGrid } from './useSpriteAnimation'
 import { TileMap } from './useTileMap'
+import { getChapterConfig } from './useChapterConfig'
 
 /**
  * 플레이어 캐릭터 클래스
@@ -29,7 +30,7 @@ export class Player {
     this.velocity = new Vector2(0, 0)
     this.width = 200
     this.height = 200
-    this.speed = 10
+    this.speed = 25
     this.angle = 0
 
     // 스프라이트 애니메이션 초기화
@@ -104,6 +105,68 @@ export class Player {
    * 플레이어 이동 처리
    */
   move(moveX: number, moveY: number): void {
+    // 챕터 설정에서 속도 가져오기
+    const config = getChapterConfig(1)
+    this.speed = config.gameplayConfig.baseSpeed || 15
+
+    // 아이소메트릭 스마트 이동 (Context-Sensitive Blending)
+    // 입력 벡터를 4개의 주 방향(TR, BR, BL, TL) 성분으로 분해하고,
+    // 이동 가능한 방향의 성분만 합산하여 최종 이동 방향을 결정합니다.
+    if (config.gameplayConfig.enableIsoInput) {
+      if (Math.abs(moveX) > 0 || Math.abs(moveY) > 0) {
+        // 1. 입력 정규화
+        const inputMag = Math.sqrt(moveX * moveX + moveY * moveY)
+        const nInputX = moveX / inputMag
+        const nInputY = moveY / inputMag
+
+        const lookAhead = 40
+        const offset = config.gameplayConfig.collisionYOffset
+        const allowance = config.gameplayConfig.collisionAllowance || 0
+
+        // 4방향 벡터 (TR, BR, BL, TL) - Screen Space
+        const X_COMP = 2 / 2.236 // ~0.894
+        const Y_COMP = 1 / 2.236 // ~0.447
+
+        const Dirs = [
+          { name: 'TR', vx: X_COMP, vy: -Y_COMP },
+          { name: 'BR', vx: X_COMP, vy: Y_COMP },
+          { name: 'BL', vx: -X_COMP, vy: Y_COMP },
+          { name: 'TL', vx: -X_COMP, vy: -Y_COMP }
+        ]
+
+        let resultX = 0
+        let resultY = 0
+        let possibleCount = 0
+
+        for (const dir of Dirs) {
+          const dot = nInputX * dir.vx + nInputY * dir.vy
+
+          if (dot > 0.2) {
+            const canGo = this.tileMap?.isWalkableAtWorld(
+              this.position.x + dir.vx * lookAhead,
+              this.position.y + dir.vy * lookAhead + offset,
+              allowance
+            )
+
+            if (canGo) {
+              const weight = dot
+              resultX += dir.vx * weight
+              resultY += dir.vy * weight
+              possibleCount++
+            }
+          }
+        }
+
+        if (possibleCount > 0) {
+          const resMag = Math.sqrt(resultX * resultX + resultY * resultY)
+          if (resMag > 0) {
+            moveX = resultX
+            moveY = resultY
+          }
+        }
+      }
+    }
+
     if (moveX === 0 && moveY === 0) {
       this.isMoving = false
       this.velocity.x = 0
@@ -157,18 +220,39 @@ export class Player {
     const oldX = this.position.x
     const oldY = this.position.y
 
-    // 새 위치 계산
-    const newX = this.position.x + this.velocity.x
-    const newY = this.position.y + this.velocity.y
+    // 타일맵이 있으면 이동 가능 여부 체크 (이동 가능한 타일만)
+    if (this.tileMap) {
+      // 챕터 설정에서 값 가져오기
+      const config = getChapterConfig(1)
+      const offset = config.gameplayConfig.collisionYOffset
+      const allowance = config.gameplayConfig.collisionAllowance || 0
 
-    // 이동 제한 없이 자유롭게 이동 (단, 맵 경계 내에서만)
-    if (this.tileMap && !this.tileMap.isInBounds(newX, newY)) {
-      // 맵 밖으로 나가려고 하면 위치 복원 (이동 불가)
-      this.position.x = oldX
-      this.position.y = oldY
+      // Delta Time 보정 (60fps 기준)
+      // 프레임이 떨어져도 이동 거리를 보정하여 부드럽게 유지
+      const timeScale = deltaTime * 60
+
+      // X축 이동 시도 (벽 슬라이딩을 위해 축 분리)
+      const moveX = this.velocity.x * timeScale
+      const nextX = this.position.x + moveX
+
+      // 현재 Y위치에서 X만 이동했을 때 가능한가? (allowance 적용)
+      if (this.tileMap.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
+        this.position.x = nextX
+      }
+
+      // Y축 이동 시도 (X가 이미 이동했을 수 있음 - 자연스러운 슬라이딩)
+      const moveY = this.velocity.y * timeScale
+      const nextY = this.position.y + moveY
+
+      // 현재 X위치(갱신됨)에서 Y만 이동했을 때 가능한가? (allowance 적용)
+      if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
+        this.position.y = nextY
+      }
     } else {
-      this.position.x = newX
-      this.position.y = newY
+      // 타일맵이 없으면 자유롭게 이동 (Delta Time 적용)
+      const timeScale = deltaTime * 60
+      this.position.x += this.velocity.x * timeScale
+      this.position.y += this.velocity.y * timeScale
     }
 
     // 애니메이션 업데이트

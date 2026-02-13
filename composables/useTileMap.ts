@@ -104,11 +104,40 @@ export class TileMap {
   }
 
   /**
-   * 월드 좌표가 맵 경계 내에 있는지 확인
+   * 월드 좌표가 맵 경계 내에 있는지 확인 (반올림 보정)
    */
   isInBounds(worldX: number, worldY: number): boolean {
     const { gridX, gridY } = this.worldToGrid(worldX, worldY)
-    return gridX >= 0 && gridX < this.mapWidth && gridY >= 0 && gridY < this.mapHeight
+    const gx = Math.round(gridX)
+    const gy = Math.round(gridY)
+    return gx >= 0 && gx < this.mapWidth && gy >= 0 && gy < this.mapHeight
+  }
+
+  /**
+   * 월드 좌표가 이동 가능한지 확인 (반올림 보정 + 버퍼 허용)
+   * buffer: 이동 불가능한 타일이어도 주변 buffer 칸 내에 이동 가능한 타일이 있으면 true 반환
+   */
+  isWalkableAtWorld(worldX: number, worldY: number, buffer: number = 0): boolean {
+    const { gridX, gridY } = this.worldToGrid(worldX, worldY)
+    const gx = Math.round(gridX)
+    const gy = Math.round(gridY)
+
+    // 1. 현재 위치가 이동 가능하면 OK
+    if (this.isWalkable(gx, gy)) return true
+
+    // 2. 이동 불가능하더라도 버퍼 범위 내에 이동 가능한 타일이 있으면 허용 (유연한 이동)
+    if (buffer > 0) {
+      for (let dy = -buffer; dy <= buffer; dy++) {
+        for (let dx = -buffer; dx <= buffer; dx++) {
+          if (dx === 0 && dy === 0) continue
+          if (this.isWalkable(gx + dx, gy + dy)) {
+            return true
+          }
+        }
+      }
+    }
+
+    return false
   }
 
   /**
