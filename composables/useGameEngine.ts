@@ -44,6 +44,19 @@ export class GameEngine {
     }
     this.ctx = ctx
 
+    // 줌 방지 이벤트 (Ctrl + 휠, Ctrl + +/-/0)
+    window.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+        e.preventDefault();
+      }
+    });
+
     // 챕터 설정 로드
     const chapterConfig = getChapterConfig(this.currentChapter)
 
@@ -51,12 +64,18 @@ export class GameEngine {
     this.camera = new Camera(canvas.width, canvas.height)
     this.tileMap = new TileMap(chapterConfig.tileMapConfig)
 
-    // 플레이어 시작 위치를 그리드 좌표에서 월드 좌표로 변환
-    const startPos = this.tileMap.getWorldPosition(
-      chapterConfig.mapData.startPosition.x,
-      chapterConfig.mapData.startPosition.y
-    )
-    this.player = new Player(startPos.x, startPos.y)
+    // 플레이어 시작 위치 설정
+    if (chapterConfig.tileMapConfig.mapBoundary) {
+      // 통맵(이미지 맵) 사용 시, (0,0)을 중앙으로 가정하고 시작
+      this.player = new Player(0, 0)
+    } else {
+      // 그리드 맵 사용 시, startPosition 그리드 좌표를 월드 좌표로 변환
+      const startPos = this.tileMap.getWorldPosition(
+        chapterConfig.mapData.startPosition.x,
+        chapterConfig.mapData.startPosition.y
+      )
+      this.player = new Player(startPos.x, startPos.y)
+    }
 
     this.inputManager = new InputManager()
     this.inputManager.onKeyDown('Space', () => {
@@ -93,11 +112,32 @@ export class GameEngine {
     this.tileMap.setBaseTile('baseTile')
 
     // 맵 데이터 로드
-    this.tileMap.loadMapData(
-      chapterConfig.mapData.tiles,
-      chapterConfig.mapData.width,
-      chapterConfig.mapData.height
-    )
+    // 외부 JSON 파일이 있으면 로드 시도
+    try {
+      const response = await fetch('/assets/chapter-1/map/map-data.json')
+      if (response.ok) {
+        const jsonMap = await response.json()
+        // JSON 데이터가 있으면 그걸 사용 (tiles는 0/1 배열이어야 함)
+        // jsonMap.tiles가 number[][] 라고 가정
+        console.log('Loaded external map data:', jsonMap.width, 'x', jsonMap.height)
+
+        // 맵 데이터 적용
+        this.tileMap.loadMapData(
+          jsonMap.tiles,
+          jsonMap.width,
+          jsonMap.height
+        )
+      } else {
+        throw new Error('Map json not found')
+      }
+    } catch (e) {
+      console.warn('Failed to load external map data, using default config:', e)
+      this.tileMap.loadMapData(
+        chapterConfig.mapData.tiles,
+        chapterConfig.mapData.width,
+        chapterConfig.mapData.height
+      )
+    }
 
     // 플레이어에게 타일맵 설정
     this.player.setTileMap(this.tileMap)
@@ -220,20 +260,25 @@ export class GameEngine {
   }
 
   private lastRegenCheckTime: number = 0;
+  private initialSpawnComplete: boolean = false
 
   /**
    * 몬스터 스폰
    */
   private spawnMonsters(countToSpawn: number = 0): void {
     const config = getChapterConfig(this.currentChapter)
-    const targetCount = countToSpawn > 0 ? countToSpawn : (config.gameplayConfig.monsterConfig?.spawnCount || 0)
-    const mapData = config.mapData
 
-    // 초기 스폰인 경우(countToSpawn == 0 또는 호출 시점) 배열 초기화 여부 결정
-    // 여기서는 단순히 추가하는 로직으로 변경.
-    // 만약 초기화가 필요하다면 외부에서 this.monsters = [] 하고 호출해야 함.
-    // 하지만 GameEngine 구조상 loadResources에서만 전체 초기화 하므로, 
-    // 여기서는 '추가' 로직으로 동작하는 것이 안전함.
+    let targetCount = 0
+
+    if (countToSpawn === 0) {
+      // 초기 스폰 호출
+      if (this.initialSpawnComplete) return
+      this.initialSpawnComplete = true
+      targetCount = config.gameplayConfig.monsterConfig?.spawnCount || 0
+    } else {
+      // 리젠 호출
+      targetCount = countToSpawn
+    }
 
     if (targetCount <= 0) return
 
@@ -241,26 +286,46 @@ export class GameEngine {
     let attempts = 0
     // 무한 루프 방지
     const maxAttempts = targetCount * 50
+    const boundary = config.tileMapConfig.mapBoundary
+
+    // 스폰 가능 영역에 여유 공간 추가 (경계에서 100px 안쪽)
+    const SPAWN_MARGIN = 100
 
     while (count < targetCount && attempts < maxAttempts) {
       attempts++
-      const gx = Math.floor(Math.random() * mapData.width)
-      const gy = Math.floor(Math.random() * mapData.height)
 
-      if (this.tileMap.isWalkable(gx, gy)) {
-        // 플레이어 시작 위치와 안전 거리 확보 (5칸)
-        const dx = gx - mapData.startPosition.x
-        const dy = gy - mapData.startPosition.y
+      let spawnX = 0
+      let spawnY = 0
 
-        // 플레이어 현재 위치와도 안전 거리 확보 (500px)
-        const worldPos = this.tileMap.gridToWorld(gx, gy)
+      if (boundary) {
+        // 경계가 있으면 경계 내에서 랜덤 좌표 생성 (마진 적용)
+        const safeMinX = boundary.minX + SPAWN_MARGIN
+        const safeMaxX = boundary.maxX - SPAWN_MARGIN
+        const safeMinY = boundary.minY + SPAWN_MARGIN
+        const safeMaxY = boundary.maxY - SPAWN_MARGIN
+
+        spawnX = safeMinX + Math.random() * (safeMaxX - safeMinX)
+        spawnY = safeMinY + Math.random() * (safeMaxY - safeMinY)
+      } else {
+        // 경계가 없으면 맵 데이터 그리드 기반 (fallback)
+        const mapData = config.mapData
+        const gx = Math.floor(Math.random() * mapData.width)
+        const gy = Math.floor(Math.random() * mapData.height)
+        const wPos = this.tileMap.gridToWorld(gx, gy)
+        spawnX = wPos.x
+        spawnY = wPos.y
+      }
+
+      // 해당 위치가 이동 가능한지 확인 (엄격한 체크, buffer 0)
+      if (this.tileMap.isWalkableAtWorld(spawnX, spawnY, 0)) {
+        // 플레이어 현재 위치와 안전 거리 확보 (500px)
         const distToPlayer = Math.sqrt(
-          Math.pow(worldPos.x - this.player.position.x, 2) +
-          Math.pow(worldPos.y - this.player.position.y, 2)
+          Math.pow(spawnX - this.player.position.x, 2) +
+          Math.pow(spawnY - this.player.position.y, 2)
         )
 
-        // 시작 지점 근처거나, 플레이어 바로 옆이면 스킵
-        if ((Math.abs(dx) < 5 && Math.abs(dy) < 5) || distToPlayer < 500) continue
+        // 플레이어 바로 옆이면 스킵
+        if (distToPlayer < 500) continue
 
         // 몬스터 종류 랜덤 선택
         const monsterConfigs = config.monsters
@@ -270,7 +335,7 @@ export class GameEngine {
 
         // 몬스터 생성 (ID는 유니크하게)
         const uniqueId = `mon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        const monster = new Monster(uniqueId, worldPos.x, worldPos.y, mConfig)
+        const monster = new Monster(uniqueId, spawnX, spawnY, mConfig)
         monster.setTileMap(this.tileMap)
 
         // 이미지 설정
@@ -293,32 +358,6 @@ export class GameEngine {
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
 
     this.ctx.save()
-
-    // 0. 배경 이미지 렌더링 (전체 맵 바깥 영역)
-    const images = this.resourceLoader.getImages()
-    const bgImage = images.get('bg1')
-    if (bgImage && bgImage.complete && bgImage.naturalWidth > 0) {
-      // 백그라운드 패턴 생성
-      const ptrn = this.ctx.createPattern(bgImage, 'repeat')
-      if (ptrn) {
-        this.ctx.fillStyle = ptrn
-        // 캔버스 크기만큼 채우되, 카메라 이동에 맞춰 패턴 위치 조정 (패럴랙스 X, 월드 고정)
-        // 패턴의 시작점을 조정하여 카메라 이동 시 배경이 고정된 것처럼 보이게 함
-
-        // 패턴 오프셋 설정 (setTransform 사용 가능하지만 복잡함)
-        // 대신 큰 영역을 그리고 fillRect 위치를 조정
-
-        // 간단히: 
-        this.ctx.save()
-        // 패턴 변환 행렬 설정 (카메라 반대 방향으로 이동하여 월드에 고정)
-        const matrix = new DOMMatrix()
-        matrix.translateSelf(-this.camera.position.x, -this.camera.position.y)
-        ptrn.setTransform(matrix)
-
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-        this.ctx.restore()
-      }
-    }
 
     // 1. 타일맵 렌더링 (맵 내부)
     this.tileMap.render(this.ctx, this.camera)

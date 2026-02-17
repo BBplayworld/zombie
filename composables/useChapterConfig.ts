@@ -12,6 +12,12 @@ export interface TileMapConfig {
     overlapOffset: number
     visibleMargin: number
     enableDepthSorting: boolean
+    mapBoundary?: {
+        minX: number
+        maxX: number
+        minY: number
+        maxY: number
+    }
 }
 
 export interface MapData {
@@ -71,7 +77,7 @@ export interface AssetConfig {
     backgroundTile: string
     player: string
     fight: string
-    bg1: string
+    mapBackground: string // Add mapBackground
 }
 
 export interface MonsterDetailConfig {
@@ -102,14 +108,21 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
         id: 1,
         name: 'Chapter 1: The Beginning',
         tileMapConfig: {
-            sourceWidth: 1024,
-            sourceHeight: 1024,
+            sourceWidth: 3072,
+            sourceHeight: 3072,
             tileWidth: 128,
             tileHeight: 64, // 2:1 비율 (평평한 바닥)
             ySpacingMultiplier: 0.7, // 시각적 보정값 (겹침 처리)
             overlapOffset: 0,
             visibleMargin: 20,
             enableDepthSorting: true,
+            // 맵 이동 제한 (이미지 기준)
+            mapBoundary: {
+                minX: -1536,
+                maxX: 1536,
+                minY: -1536,
+                maxY: 1536
+            }
         },
         gameplayConfig: {
             mapGenerationRatio: 0.7, // 맵의 70%를 바닥으로 생성
@@ -128,7 +141,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
             backgroundTile: '/assets/chapter-1/tile/basetile-2.png',
             player: '/assets/chapter-1/player/player.png',
             fight: '/assets/chapter-1/player/fight.png',
-            bg1: '/assets/chapter-1/background/bg-1.png'
+            mapBackground: '/assets/chapter-1/map/map-1_3072.png' // New map image
         },
         monsters: [
             {
@@ -178,78 +191,23 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
             }
         ],
         // 맵 데이터 생성 (설정값 주입)
-        mapData: createChapter1MapData(160, 160, 0.7)
+        mapData: createChapter1MapData(200, 200, 0.7)
     }
 }
 
 /**
  * 챕터 1 맵 데이터 생성
- * 간단한 십자 형태의 길
+ * 이미지 맵(@/assets/chapter-1/map/map-1.png)에 맞춘 맵 데이터 생성
+ * 이동 제약은 mapBoundary로 처리하므로, 그리드 맵은 전체 이동 가능(1)으로 설정.
  */
 function createChapter1MapData(width: number, height: number, ratio: number = 0.7): MapData {
-    // 시드 기반 난수 생성 (고정된 맵 형태 보장)
-    let seed = 12345
-    const random = () => {
-        seed = (seed * 9301 + 49297) % 233280
-        return seed / 233280
-    }
+    // 1: Walkable
+    const tiles: number[][] = Array(height).fill(0).map(() => Array(width).fill(1))
 
-    // 맵 초기화 (모두 이동 불가)
-    const tiles: number[][] = Array(height).fill(0).map(() => Array(width).fill(0))
+    // 그리드 상의 벽은 모두 제거 (boundary 사용)
 
-    // Random Walker 알고리즘을 이용한 자연스러운 맵 생성
     const centerX = Math.floor(width / 2)
     const centerY = Math.floor(height / 2)
-
-    // 시작 위치는 무조건 이동 가능해야 함
-    tiles[centerY][centerX] = 1
-
-    let x = centerX
-    let y = centerY
-
-    // 전체 면적의 비율만큼 바닥으로 만듦 (설정값 사용)
-    const maxSteps = Math.floor(width * height * ratio)
-
-    for (let i = 0; i < maxSteps; i++) {
-        // 현재 위치 주변을 바닥(1)으로 설정 (3x3 브러시)
-        //   *
-        // * * *
-        //   *
-        const points = [
-            { dx: 0, dy: 0 },
-            { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-            { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-            // 대각선 추가하여 더 둥글게 (선택적)
-            { dx: 1, dy: 1 }, { dx: -1, dy: -1 },
-            { dx: 1, dy: -1 }, { dx: -1, dy: 1 }
-        ]
-
-        for (const p of points) {
-            const nx = x + p.dx
-            const ny = y + p.dy
-
-            // 맵 경계 확인 (가장자리는 벽으로)
-            if (nx >= 2 && nx < width - 2 && ny >= 2 && ny < height - 2) {
-                tiles[ny][nx] = 1
-            }
-        }
-
-        // 랜덤 이동 (이전 방향을 유지하려는 성향을 주면 더 긴 길이 만들어짐)
-        const dirs = [
-            { dx: 0, dy: -1 }, // 상
-            { dx: 0, dy: 1 },  // 하
-            { dx: -1, dy: 0 }, // 좌
-            { dx: 1, dy: 0 }   // 우
-        ]
-        const move = dirs[Math.floor(random() * dirs.length)]
-
-        x += move.dx
-        y += move.dy
-
-        // 맵 경계 클램핑
-        x = Math.max(3, Math.min(width - 4, x))
-        y = Math.max(3, Math.min(height - 4, y))
-    }
 
     return {
         width,

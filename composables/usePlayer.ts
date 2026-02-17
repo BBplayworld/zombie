@@ -336,6 +336,25 @@ export class Player {
       if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
         this.position.y = nextY
       }
+
+      // 맵 경계 강제 적용 (빨간 네모 밖으로 절대 나가지 못하게)
+      const boundary = config.tileMapConfig.mapBoundary
+      if (boundary) {
+        const BOUNDARY_MARGIN = 50 // 경계에서 50px 안쪽까지만 허용
+
+        if (this.position.x < boundary.minX + BOUNDARY_MARGIN) {
+          this.position.x = boundary.minX + BOUNDARY_MARGIN
+        }
+        if (this.position.x > boundary.maxX - BOUNDARY_MARGIN) {
+          this.position.x = boundary.maxX - BOUNDARY_MARGIN
+        }
+        if (this.position.y < boundary.minY + BOUNDARY_MARGIN) {
+          this.position.y = boundary.minY + BOUNDARY_MARGIN
+        }
+        if (this.position.y > boundary.maxY - BOUNDARY_MARGIN) {
+          this.position.y = boundary.maxY - BOUNDARY_MARGIN
+        }
+      }
     } else {
       const timeScale = deltaTime * 60
       this.position.x += this.velocity.x * timeScale

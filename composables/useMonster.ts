@@ -18,8 +18,9 @@ export class Monster {
     public direction: 'idle' | 'up' | 'down' | 'left' | 'right' = 'down'
 
     // AI 상태
-    private state: 'wander' | 'chase' | 'idle' = 'wander'
+    private state: 'wander' | 'chase' | 'idle' | 'return' = 'wander'
     private stateTimer: number = 0
+    public spawnOrigin: Vector2
     private moveTarget: Vector2 | null = null
 
     // 스프라이트 애니메이션
@@ -35,6 +36,8 @@ export class Monster {
     constructor(id: string, x: number, y: number, config: MonsterDetailConfig) {
         this.id = id
         this.position = new Vector2(x, y)
+        this.spawnOrigin = new Vector2(x, y)
+        this.moveTarget = new Vector2(x, y)
         this.velocity = new Vector2(0, 0)
         // 설정 저장
         this.config = config
@@ -108,6 +111,7 @@ export class Monster {
             const moveY = this.velocity.y * timeScale
 
             const config = getChapterConfig(1)
+            // 몬스터는 allowance 없이 엄격하게 체크
             const allowance = 0
             const offset = config.gameplayConfig.collisionYOffset
 
@@ -118,7 +122,6 @@ export class Monster {
             if (this.tileMap?.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
                 this.position.x = nextX
             } else {
-                // X축 막힘 -> 멈추기
                 this.velocity.x = 0
             }
 
@@ -126,24 +129,37 @@ export class Monster {
             if (this.tileMap?.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
                 this.position.y = nextY
             } else {
-                // Y축 막힘 -> 멈추기
                 this.velocity.y = 0
             }
 
-            // 만약 둘 다 막혀서 움직이지 못했거나 velocity가 0이 되었다면 상태 전환
-            if (this.velocity.x === 0 && this.velocity.y === 0) {
-                this.stateTimer = 0
-                this.state = 'idle'
-                this.isMoving = false
-            } else {
-                // 화면 밖으로 나가는 것 방지 (안전 장치)
-                if (this.tileMap && !this.tileMap.isInBounds(this.position.x, this.position.y)) {
-                    // 강제로 멈춤
+            // 3. 맵 경계 강제 적용 (빨간 네모 밖으로 절대 나가지 못하게)
+            const boundary = config.tileMapConfig.mapBoundary
+            if (boundary) {
+                const BOUNDARY_MARGIN = 50 // 경계에서 50px 안쪽까지만 허용
+
+                if (this.position.x < boundary.minX + BOUNDARY_MARGIN) {
+                    this.position.x = boundary.minX + BOUNDARY_MARGIN
                     this.velocity.x = 0
-                    this.velocity.y = 0
-                    this.state = 'idle'
-                    this.isMoving = false
                 }
+                if (this.position.x > boundary.maxX - BOUNDARY_MARGIN) {
+                    this.position.x = boundary.maxX - BOUNDARY_MARGIN
+                    this.velocity.x = 0
+                }
+                if (this.position.y < boundary.minY + BOUNDARY_MARGIN) {
+                    this.position.y = boundary.minY + BOUNDARY_MARGIN
+                    this.velocity.y = 0
+                }
+                if (this.position.y > boundary.maxY - BOUNDARY_MARGIN) {
+                    this.position.y = boundary.maxY - BOUNDARY_MARGIN
+                    this.velocity.y = 0
+                }
+            }
+
+            // 막혔을 경우
+            if (this.velocity.x === 0 && this.velocity.y === 0) {
+                // 막히면 바로 상태 전환
+                this.stateTimer = 0
+                this.isMoving = false
             }
         }
 
@@ -160,27 +176,94 @@ export class Monster {
 
     private updateAI(dt: number): void {
         this.stateTimer -= dt
+
+        // 상태 전환 로직
         if (this.stateTimer <= 0) {
-            // 상태 전환
             if (this.state === 'idle') {
-                this.state = 'wander'
-                this.stateTimer = 2 + Math.random() * 2 // 2~4초 이동
+                const distToSpawn = Math.sqrt(
+                    Math.pow(this.position.x - this.spawnOrigin.x, 2) +
+                    Math.pow(this.position.y - this.spawnOrigin.y, 2)
+                )
 
-                // 랜덤 방향 설정
-                const angle = Math.random() * Math.PI * 2
-                const speed = this.speed
-                this.velocity.x = Math.cos(angle) * speed
-                this.velocity.y = Math.sin(angle) * speed
+                // 거리가 100px 이상이면 60% 확률로 복귀 시도, 아니면 랜덤 배회
+                if (distToSpawn > 100 && Math.random() < 0.6) {
+                    this.state = 'return'
+                    if (!this.moveTarget) this.moveTarget = new Vector2(0, 0)
+                    this.moveTarget.x = this.spawnOrigin.x
+                    this.moveTarget.y = this.spawnOrigin.y
 
-                // 방향 설정
-                this.updateDirection(this.velocity.x, this.velocity.y)
+                    this.stateTimer = 5 // 복귀는 넉넉하게 5초
+                } else {
+                    this.state = 'wander'
+
+                    // 배회 목표 지점 설정 (맵 경계 내에서만)
+                    const config = getChapterConfig(1)
+                    const boundary = config.tileMapConfig.mapBoundary
+                    const WANDER_MARGIN = 150 // 경계에서 150px 안쪽
+
+                    let tx = this.spawnOrigin.x
+                    let ty = this.spawnOrigin.y
+
+                    if (boundary) {
+                        // 스폰 위치 주변 300px 반경 내 랜덤 타겟 (경계 제한 적용)
+                        const angle = Math.random() * Math.PI * 2
+                        const dist = Math.random() * 300
+                        tx = this.spawnOrigin.x + Math.cos(angle) * dist
+                        ty = this.spawnOrigin.y + Math.sin(angle) * dist
+
+                        // 경계를 벗어나면 경계 내로 클램핑
+                        const safeMinX = boundary.minX + WANDER_MARGIN
+                        const safeMaxX = boundary.maxX - WANDER_MARGIN
+                        const safeMinY = boundary.minY + WANDER_MARGIN
+                        const safeMaxY = boundary.maxY - WANDER_MARGIN
+
+                        tx = Math.max(safeMinX, Math.min(safeMaxX, tx))
+                        ty = Math.max(safeMinY, Math.min(safeMaxY, ty))
+                    } else {
+                        // 경계가 없으면 기존 로직 사용
+                        const angle = Math.random() * Math.PI * 2
+                        const dist = Math.random() * 300
+                        tx = this.spawnOrigin.x + Math.cos(angle) * dist
+                        ty = this.spawnOrigin.y + Math.sin(angle) * dist
+                    }
+
+                    if (!this.moveTarget) this.moveTarget = new Vector2(0, 0)
+                    this.moveTarget.x = tx
+                    this.moveTarget.y = ty
+
+                    this.stateTimer = 3 // 배회 이동은 3초 제한
+                }
                 this.isMoving = true
             } else {
+                // Wander/Return 끝 -> Idle
                 this.state = 'idle'
                 this.stateTimer = 1 + Math.random() * 2 // 1~3초 대기
                 this.velocity.x = 0
                 this.velocity.y = 0
                 this.isMoving = false
+            }
+        }
+
+        // 이동 로직 (목표 지점으로 이동)
+        if (this.isMoving && this.moveTarget) {
+            const dx = this.moveTarget.x - this.position.x
+            const dy = this.moveTarget.y - this.position.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+
+            // 근접하면 도착 처리
+            if (dist < 5) {
+                this.position.x = this.moveTarget.x
+                this.position.y = this.moveTarget.y
+                this.velocity.x = 0
+                this.velocity.y = 0
+                this.stateTimer = 0 // 즉시 다음 상태(Idle)로 전환
+                this.isMoving = false
+            } else {
+                if (this.speed > 0) {
+                    this.velocity.x = (dx / dist) * this.speed
+                    this.velocity.y = (dy / dist) * this.speed
+                }
+                this.updateDirection(this.velocity.x, this.velocity.y)
             }
         }
     }
@@ -193,7 +276,7 @@ export class Monster {
         }
     }
 
-    render(ctx: CanvasRenderingContext2D, camera: any): void { // Camera type any 임시
+    render(ctx: CanvasRenderingContext2D, camera: any): void {
         if (this.isDead) return
 
         // 화면 좌표 계산
@@ -201,6 +284,7 @@ export class Monster {
         const screenY = this.position.y - camera.position.y + ctx.canvas.height / 2
 
         // 화면 밖이면 렌더링 스킵 (최적화)
+        // 넉넉하게 200px 여유
         if (screenX < -200 || screenX > ctx.canvas.width + 200 ||
             screenY < -200 || screenY > ctx.canvas.height + 200) {
             return

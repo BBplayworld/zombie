@@ -12,10 +12,12 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "canvas": "^3.2.1",
     "nuxt": "^3.14.159",
     "vue": "latest"
   },
   "devDependencies": {
-    "@nuxt/devtools": "latest"
+    "@nuxt/devtools": "latest",
+    "@types/node": "^25.2.3"
   }
 }
