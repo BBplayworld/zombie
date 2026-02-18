@@ -61,10 +61,12 @@ export class MonsterManager {
     }
 
     /**
-     * 죽은 몬스터 제거
+     * 죽은 몬스터 제거 및 반환
      */
-    removeDeadMonsters(): void {
+    removeDeadMonsters(): Monster[] {
+        const dead = this.monsters.filter(m => m.isDead)
         this.monsters = this.monsters.filter(m => !m.isDead)
+        return dead
     }
 
     /**

@@ -5,16 +5,15 @@ import { InputManager } from '../systems/InputManager'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { MonsterManager } from './MonsterManager'
 import { RenderManager } from './RenderManager'
+import { ItemDrop } from '../entities/ItemDrop'
+import { Item } from '../entities/Item'
 import { getChapterConfig } from '../config/chapters'
+import { InventoryManager } from './InventoryManager'
+import { t } from '../config/Locale'
 
 /**
  * 게임 엔진 클래스
  * 게임의 핵심 시스템을 통합 관리하고 게임 루프를 실행
- * 
- * 초기화 시퀀스:
- * 1. constructor() - 기본 시스템 생성
- * 2. loadResources() - 리소스 로딩
- * 3. start() - 게임 루프 시작
  */
 export class GameEngine {
   // Canvas & Context
@@ -31,6 +30,10 @@ export class GameEngine {
   // Managers
   private monsterManager: MonsterManager
   private renderManager: RenderManager
+  private inventoryManager: InventoryManager
+
+  // Entities
+  private items: ItemDrop[] = []
 
   // Game State
   public state: 'loading' | 'ready' | 'playing' | 'paused' = 'loading'
@@ -65,6 +68,7 @@ export class GameEngine {
     // 매니저 초기화
     this.monsterManager = new MonsterManager(this.tileMap, this.resourceLoader)
     this.renderManager = new RenderManager(canvas, this.resourceLoader)
+    this.inventoryManager = new InventoryManager(this.player, canvas)
 
     console.log('✅ [STEP 1] Core systems initialized')
   }
@@ -178,6 +182,9 @@ export class GameEngine {
     const fightSprite = this.resourceLoader.getImage('fight')
     if (fightSprite) this.player.setFightImage(fightSprite)
 
+    const helmetSprite = this.resourceLoader.getImage('helmet')
+    if (helmetSprite) this.player.setHelmetImage(helmetSprite)
+
     console.log('  ✅ [STEP 2-3] Player initialized')
   }
 
@@ -193,12 +200,15 @@ export class GameEngine {
     this.camera.follow(this.player.position, true)
     this.tileMap.updateVisibleTiles(this.camera)
     this.player.update(0)
+    // First render to show game is ready
     this.renderManager.render(
       this.tileMap,
       this.camera,
       this.player,
       this.monsterManager.monsters,
-      this.state
+      this.items, // add items
+      this.state,
+      this.inventoryManager
     )
 
     console.log('  ✅ [STEP 2-5] Game setup complete')
@@ -228,7 +238,9 @@ export class GameEngine {
       this.camera,
       this.player,
       this.monsterManager.monsters,
-      this.state
+      this.items, // add items
+      this.state,
+      this.inventoryManager
     )
 
     requestAnimationFrame(this.gameLoop)
@@ -245,28 +257,82 @@ export class GameEngine {
     // 플레이어 업데이트
     this.player.update(this.deltaTime)
 
+    // Inventory Hover Check (Tooltip + Cursor)
+    if (this.player.isInventoryOpen) {
+      this.inventoryManager.handleHover(this.inputManager)
+    } else {
+      this.canvas.style.cursor = 'default'
+      this.player.hoveredItem = null
+    }
+
     // 몬스터 관리
     const config = getChapterConfig(this.currentChapter)
-    this.monsterManager.removeDeadMonsters()
+
+    // 1. 죽은 몬스터 처리 및 아이템 드랍
+    const deadMonsters = this.monsterManager.removeDeadMonsters()
+    deadMonsters.forEach(m => {
+      // 아이템 생성 (확률은 내부 config에서 처리)
+      const item = Item.createRandom(m.position.x, m.position.y)
+      if (item) {
+        this.items.push(item.drop(m.position.x, m.position.y))
+      }
+    })
+
     this.monsterManager.updateAll(this.deltaTime)
     this.monsterManager.handleRespawn(config, this.player.position, currentTime)
 
+    // 아이템 업데이트 및 획득 처리
+    this.items.forEach(item => item.update(this.deltaTime))
+
+    // 아이템 획득 거리 체크 (플레이어와 거리 50px 이내)
+    this.items = this.items.filter(item => {
+      const dx = this.player.position.x - item.position.x
+      const dy = this.player.position.y - item.position.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      if (dist < 50) {
+        console.log(`Item collected: ${item.data.name} (${item.data.rarity})`)
+        this.player.addItem(item.data)
+        item.isCollected = true
+        return false // Remove from list
+      }
+      return true
+    })
+
     // Player-Monster Collision (Block/Return)
     this.monsterManager.monsters.forEach(monster => {
-      // 1. Check Player Collision
       monster.checkPlayerCollision(this.player.position.x, this.player.position.y)
-
-      // 2. Check Other Monsters Collision (Separation)
       this.monsterManager.monsters.forEach(other => {
-        if (monster !== other) {
-          monster.resolveMonsterCollision(other)
-        }
+        if (monster !== other) monster.resolveMonsterCollision(other)
       })
     })
 
     // 카메라 업데이트
     this.camera.follow(this.player.position)
     this.tileMap.updateVisibleTiles(this.camera)
+  }
+
+  private handlePlayerAttack(): void {
+    const ATTACK_RANGE = 250 // 공격 범위
+
+    this.monsterManager.monsters.forEach(monster => {
+      if (monster.isDead) return
+
+      const dx = monster.position.x - this.player.position.x
+      const dy = monster.position.y - this.player.position.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      if (dist <= ATTACK_RANGE) {
+        const { amount, isCrit } = this.player.getDamage()
+        monster.takeDamage(amount)
+
+        const pushPower = 50 + (isCrit ? 30 : 0)
+        monster.pushFrom(this.player.position.x, this.player.position.y, pushPower)
+
+        const hitType = isCrit ? 'CRITICAL HIT!' : 'Hit'
+        console.log(`${hitType} monster ${monster.id}! Damage: ${amount}, HP: ${monster.hp}`)
+      }
+    })
   }
 
   // ==================== 헬퍼 함수들 ====================
@@ -299,7 +365,6 @@ export class GameEngine {
    * 플레이어 생성
    */
   private createPlayer(chapterConfig: any): Player {
-    // 오픈 월드 맵이면 (worldSize가 있으면) (0,0)에서 시작
     if (chapterConfig.openWorldMapConfig) {
       return new Player(0, 0)
     }
@@ -316,37 +381,58 @@ export class GameEngine {
    */
   private setupInputManager(): InputManager {
     const inputManager = new InputManager()
+
     inputManager.onKeyDown('Space', () => {
       if (this.state === 'playing') {
         this.player.attack()
+        this.handlePlayerAttack()
       }
     })
+
+    inputManager.onKeyDown('KeyI', () => {
+      if (this.state === 'playing') {
+        this.player.toggleInventory()
+
+        // Reset hover and cursor when toggling
+        this.player.hoveredItem = null
+        this.canvas.style.cursor = 'default'
+
+        // Reset menu on open
+        if (this.player.isInventoryOpen) {
+          this.player.inventoryMenu = null
+        }
+      }
+    })
+
+    inputManager.onMouseDown((e: MouseEvent) => {
+      // Delegate to Inventory Manager if open
+      if (this.player.isInventoryOpen) {
+        const handled = this.inventoryManager.handleClick(e)
+        if (handled) return
+      }
+
+      // If not handled by inventory (e.g. clicked outside or inventory closed),
+      // we might handle movement here. 
+      // Current system uses Keyboard for movement, so nothing else here.
+    })
+
     return inputManager
   }
 
   // ==================== 공개 API ====================
 
-  /**
-   * 화면 크기 조정
-   */
   resize(width: number, height: number): void {
     this.canvas.width = width
     this.canvas.height = height
     this.camera.resize(width, height)
   }
 
-  /**
-   * 일시정지
-   */
   pause(): void {
     if (this.state === 'playing') {
       this.state = 'paused'
     }
   }
 
-  /**
-   * 재개
-   */
   resume(): void {
     if (this.state === 'paused') {
       this.state = 'playing'
@@ -355,9 +441,6 @@ export class GameEngine {
     }
   }
 
-  /**
-   * 리소스 정리
-   */
   destroy(): void {
     this.inputManager.destroy()
     this.resourceLoader.clear()

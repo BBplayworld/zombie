@@ -6,6 +6,10 @@ export class InputManager {
     private keyDownHandlers: Map<string, Function[]> = new Map()
     private keyUpHandlers: Map<string, Function[]> = new Map()
 
+    private mouseX: number = 0
+    private mouseY: number = 0
+    private mouseDownHandlers: Function[] = []
+
     constructor() {
         this.setupEventListeners()
     }
@@ -15,8 +19,6 @@ export class InputManager {
 
         window.addEventListener('keydown', (e: KeyboardEvent) => {
             this.keys.set(e.code, true)
-
-            // 이벤트 핸들러 호출
             const handlers = this.keyDownHandlers.get(e.code)
             if (handlers) {
                 handlers.forEach(handler => handler(e))
@@ -25,18 +27,32 @@ export class InputManager {
 
         window.addEventListener('keyup', (e: KeyboardEvent) => {
             this.keys.set(e.code, false)
-
-            // 이벤트 핸들러 호출
             const handlers = this.keyUpHandlers.get(e.code)
             if (handlers) {
                 handlers.forEach(handler => handler(e))
             }
         })
 
-        // 브라우저 포커스 잃을 때 모든 키 초기화
+        window.addEventListener('mousemove', (e: MouseEvent) => {
+            this.mouseX = e.clientX
+            this.mouseY = e.clientY
+        })
+
+        window.addEventListener('mousedown', (e: MouseEvent) => {
+            this.mouseDownHandlers.forEach(handler => handler(e))
+        })
+
         window.addEventListener('blur', () => {
             this.keys.clear()
         })
+    }
+
+    getMousePosition(): { x: number, y: number } {
+        return { x: this.mouseX, y: this.mouseY }
+    }
+
+    onMouseDown(handler: Function): void {
+        this.mouseDownHandlers.push(handler)
     }
 
     /**

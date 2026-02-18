@@ -139,6 +139,10 @@ export interface AssetConfig {
     player: string
     fight: string
     mapBackground: string
+    helmet: string
+    armor: string
+    weapon: string
+    window: string
 }
 
 // ============================================================================
@@ -153,6 +157,8 @@ export interface MonsterDetailConfig {
     autoAttack: boolean
     regenTime: number
     detectionRange: number
+    hp?: number
+    stats: EntityStats
 }
 
 // ============================================================================
@@ -164,7 +170,77 @@ export interface ChapterConfig {
     name: string
     openWorldMapConfig: OpenWorldMapConfig
     gameplayConfig: GameplayConfig
+    itemDropConfig: ItemDropConfig
     mapData: MapData
     assetConfig: AssetConfig
     monsters: MonsterDetailConfig[]
 }
+
+// ============================================================================
+// 능력치 및 아이템 시스템 (New Stats & Items)
+// ============================================================================
+
+// 5가지 핵심 능력치 (중세 던전 테마)
+// 1. Vigor (활력): 최대 체력 및 회복력
+// 2. Spirit (정신): 스킬 쿨타임 감소 및 마법 저항
+// 3. Might (강인함): 물리 공격력 및 밀쳐내기 힘
+// 4. Agility (민첩): 이동 속도 및 공격 속도
+// 5. Perception (통찰): 치명타 확률 및 적 감지 범위
+export type StatType = 'Vigor' | 'Spirit' | 'Might' | 'Agility' | 'Perception'
+
+export interface EntityStats {
+    Vigor: number
+    Spirit: number
+    Might: number
+    Agility: number
+    Perception: number
+}
+
+// 아이템 등급
+export type ItemRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary'
+
+// 아이템 옵션 수치 (Flat + Percent)
+export interface ItemStatValue {
+    flat: number    // 고정 수치
+    percent: number // 퍼센트 수치 (0.1 = 10%)
+}
+
+// 아이템 데이터
+export interface ItemData {
+    id: string
+    name: string
+    type: ItemType
+    rarity: ItemRarity
+    stats: Partial<Record<StatType, ItemStatValue>> // 등급에 따라 여러 능력치 보유
+}
+
+
+// ============================================================================
+// 아이템 드랍 및 옵션 설정 (Item Drop Configuration)
+// ============================================================================
+
+// 아이템 부위 (장비 슬롯)
+export type ItemType = 'Helmet' | 'Armor' | 'Weapon' | 'Shield' | 'Boots' | 'Ring'
+
+export interface StatRangeConfig {
+    min: number
+    max: number
+    chance: number // 해당 옵션이 붙을 확률 (0~1)
+}
+
+export interface RarityConfig {
+    color: string           // 등급 색상
+    dropChance: number      // 드랍 확률 (가중치 또는 절대확률)
+    optionCount: number     // 붙을 수 있는 옵션 개수
+    statRanges: {
+        flat: StatRangeConfig    // 기본 수치 범위
+        percent: StatRangeConfig // 퍼센트 수치 범위
+    }
+}
+
+export interface ItemDropConfig {
+    globalDropRate: number // 전체 드랍 확률 (0~1)
+    rarities: Record<ItemRarity, RarityConfig>
+}
+
+

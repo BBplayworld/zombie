@@ -197,15 +197,6 @@ export class TileMap {
   }
 
   /**
-   * 월드 좌표를 그리드 좌표로 변환 (역변환)
-   */
-  private worldToGrid(worldX: number, worldY: number): { gridX: number; gridY: number } {
-    const gridX = (worldX / this.TILE_WIDTH_HALF + worldY / this.Y_SPACING) / 2
-    const gridY = (worldY / this.Y_SPACING - worldX / this.TILE_WIDTH_HALF) / 2
-    return { gridX, gridY }
-  }
-
-  /**
    * 카메라 뷰포트에 보이는 타일들만 동적으로 생성
    * (Polygon 모드에서는 개별 타일 렌더링을 지원하지 않음 - 통맵 사용 권장)
    */
@@ -231,27 +222,33 @@ export class TileMap {
 
       ctx.drawImage(mapBg, drawX, drawY, mapWidth, mapHeight)
 
-      // 디버그: 폴리곤 렌더링
-      if (this.mapData && this.mapData.length > 2) {
+      // 1. 이동 가능 영역 그림자 처리 (Point #1)
+      const area = this.CONFIG.walkableArea || this.CONFIG.mapBoundary
+      if (area) {
+        const wx = screenPos.x + area.minX
+        const wy = screenPos.y + area.minY
+        const ww = area.maxX - area.minX
+        const wh = area.maxY - area.minY
+
+        ctx.save()
+        // 비이동 영역(바깥쪽) 어둡게 처리
         ctx.beginPath()
-        const first = camera.worldToScreen(this.mapData[0].x, this.mapData[0].y)
-        ctx.moveTo(first.x, first.y)
-        for (let i = 1; i < this.mapData.length; i++) {
-          const p = camera.worldToScreen(this.mapData[i].x, this.mapData[i].y)
-          ctx.lineTo(p.x, p.y)
-        }
-        ctx.closePath()
-        ctx.strokeStyle = 'red'
-        ctx.lineWidth = 3
-        ctx.stroke()
+        // 전체 맵 범위 (넉넉하게)
+        ctx.rect(drawX - 500, drawY - 500, mapWidth + 1000, mapHeight + 1000)
+        // 이동 가능 영역 (반 시계 방향 또는 evenodd로 구멍 뚫기)
+        ctx.rect(wx, wy, ww, wh)
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
+        ctx.fill('evenodd')
+
+        // 경계선 부드러운 그림자 효과
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)'
+        ctx.shadowBlur = 60
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'
+        ctx.lineWidth = 5
+        ctx.strokeRect(wx, wy, ww, wh)
+        ctx.restore()
       }
     }
-  }
-
-  /**
-   * 패턴 설정 (하위 호환성)
-   */
-  setPattern(pattern: string[][]): void {
-    // 아이소메트릭 모드에서는 단일 타일만 사용
   }
 }

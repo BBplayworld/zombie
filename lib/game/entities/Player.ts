@@ -2,6 +2,9 @@ import { Vector2 } from '../utils/math'
 import { SpriteAnimation, createFramesFromGrid } from '../systems/SpriteAnimation'
 import { TileMap } from '../systems/TileMap'
 import { getChapterConfig } from '../config/chapters'
+import { EntityStats, ItemData, ItemStatValue, StatType, ItemType } from '../config/types'
+import { Item } from './Item'
+import { Inventory } from './Inventory'
 
 /**
  * 플레이어 캐릭터 클래스
@@ -13,6 +16,27 @@ export class Player {
   public height: number
   public speed: number
   public angle: number
+  public hp: number = 100
+  public maxHp: number = 100
+
+  // 능력치 및 아이템
+  public stats: EntityStats = {
+    Vigor: 10,
+    Spirit: 10,
+    Might: 10,
+    Agility: 10,
+    Perception: 10
+  }
+  public damage: number = 10
+  public critChance: number = 0
+
+  public inventory: Inventory = new Inventory()
+  public equipment: Partial<Record<ItemType, Item>> = {}
+  public isInventoryOpen: boolean = false
+
+  // 공격 시각 효과
+  private attackVisualTimer: number = 0
+  private readonly ATTACK_VISUAL_DURATION = 0.3 // 0.3초 동안 범위 표시
 
   // 애니메이션 상태
   public isMoving: boolean = false
@@ -25,6 +49,11 @@ export class Player {
   // 스프라이트 애니메이션
   private spriteAnimation: SpriteAnimation
   private spriteImage: HTMLImageElement | null = null
+  private helmetImage: HTMLImageElement | null = null
+
+  // UI State
+  public inventoryMenu: { x: number, y: number, itemIndex: number } | null = null
+  public hoveredItem: { item: Item, x: number, y: number } | null = null
 
   // 타일맵 참조 (이동 제한용)
   private tileMap: TileMap | null = null
@@ -37,17 +66,70 @@ export class Player {
     this.speed = 25
     this.angle = 0
 
+    // 초기 능력치 기반 HP 설정
+    this.updateStats()
+    this.hp = this.maxHp
+
     // 스프라이트 애니메이션 초기화
     this.spriteAnimation = new SpriteAnimation()
     this.setupAnimations()
   }
-
 
   /**
    * 스프라이트 이미지 설정
    */
   setSpriteImage(image: HTMLImageElement): void {
     this.spriteImage = image
+  }
+
+  setFightImage(image: HTMLImageElement): void {
+    this.fightImage = image
+
+    // 전투 이미지를 로드하면 해당 이미지 크기에 맞춰 애니메이션 재설정 (5x5 그리드)
+    const totalWidth = image.naturalWidth
+    const totalHeight = image.naturalHeight
+    const cols = 5
+    const rows = 5
+
+    const frameWidth = totalWidth / cols
+    const frameHeight = totalHeight / rows
+
+    // Attack animations
+    // Row 0: Attack Down
+    this.spriteAnimation.addAnimation({
+      name: 'attack_down',
+      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 5, cols), // 5 frames
+      frameRate: 12,
+      loop: false
+    })
+
+    // Row 1: Attack Left
+    this.spriteAnimation.addAnimation({
+      name: 'attack_left',
+      frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 5, cols),
+      frameRate: 12,
+      loop: false
+    })
+
+    // Row 2: Attack Right
+    this.spriteAnimation.addAnimation({
+      name: 'attack_right',
+      frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 5, cols),
+      frameRate: 12,
+      loop: false
+    })
+
+    // Row 3: Attack Up
+    this.spriteAnimation.addAnimation({
+      name: 'attack_up',
+      frames: createFramesFromGrid(0, frameHeight * 3, frameWidth, frameHeight, 5, cols),
+      frameRate: 12,
+      loop: false
+    })
+  }
+
+  setHelmetImage(image: HTMLImageElement): void {
+    this.helmetImage = image
   }
 
   /**
@@ -58,19 +140,212 @@ export class Player {
   }
 
   /**
+   * 능력치 업데이트 (아이템 장착/해제 시 호출)
+   */
+  updateStats(): void {
+    // 1. 초기화 (기본 스탯)
+    const baseStats: EntityStats = {
+      Vigor: 10,
+      Spirit: 10,
+      Might: 10,
+      Agility: 10,
+      Perception: 10
+    }
+
+    const totals: Record<StatType, number> = { ...baseStats }
+    const percents: Record<StatType, number> = {
+      Vigor: 0, Spirit: 0, Might: 0, Agility: 0, Perception: 0
+    }
+
+    // 2. 아이템 옵션 합산
+    Object.values(this.equipment).forEach(item => {
+      if (!item) return
+      Object.entries(item.data.stats).forEach(([key, val]) => {
+        const stat = key as StatType
+        if (val) {
+          totals[stat] += val.flat
+          percents[stat] += val.percent
+        }
+      })
+    })
+
+    // 3. 최종 스탯 반영 (퍼센트 적용)
+    // Formula: Stat = (Base + Flat) * (1 + Percent)
+    this.stats.Vigor = Math.floor(totals.Vigor * (1 + percents.Vigor))
+    this.stats.Spirit = Math.floor(totals.Spirit * (1 + percents.Spirit))
+    this.stats.Might = Math.floor(totals.Might * (1 + percents.Might))
+    this.stats.Agility = Math.floor(totals.Agility * (1 + percents.Agility))
+    this.stats.Perception = Math.floor(totals.Perception * (1 + percents.Perception))
+
+    // 4. 파생 능력치 계산 (Derived Stats)
+
+    // Max HP = Base 100 + Vigor * 10
+    this.maxHp = 100 + this.stats.Vigor * 10
+    // Current HP healing? Maybe keep percentage? For now just clamp.
+    if (this.hp > this.maxHp) this.hp = this.maxHp
+
+    // Speed = Base 15 + Agility * 0.5
+    const config = getChapterConfig(1)
+    const baseSpeed = config.gameplayConfig.baseSpeed || 15
+    this.speed = baseSpeed + (this.stats.Agility * 0.5)
+
+    // Damage = Base 10 + Might * 2
+    this.damage = 10 + this.stats.Might * 2
+
+    // Crit Chance = Perception * 0.01 (1%)
+    this.critChance = this.stats.Perception * 0.01
+
+    console.log('Updated Stats:', this.stats)
+    console.log(`Derived: HP ${this.maxHp}, DMG ${this.damage}, SPD ${this.speed}, CRIT ${this.critChance.toFixed(2)}`)
+  }
+
+  getDamage(): { amount: number, isCrit: boolean } {
+    const isCrit = Math.random() < this.critChance
+    const multiplier = isCrit ? 2.0 : 1.0
+    // Random variance +/- 10%
+    const variance = (Math.random() * 0.2) + 0.9
+    const amount = Math.floor(this.damage * multiplier * variance)
+    return { amount, isCrit }
+  }
+
+  /**
+   * 아이템 획득 (인벤토리 추가)
+   */
+  addItem(itemData: ItemData): void {
+    const item = new Item(itemData)
+    if (this.inventory.add(item)) {
+      console.log(`Added to inventory: ${item.data.name}`)
+
+      // Auto-equip if slot is empty (optional feature, good for testing)
+      const type = item.data.type
+      if (item.isEquipment() && !this.equipment[type]) {
+        this.equipItem(item)
+      }
+    } else {
+      console.log('Inventory Full')
+    }
+  }
+
+  /**
+   * 아이템 착용
+   */
+  equipItem(item: Item): void {
+    const type = item.data.type
+    const current = this.equipment[type]
+
+    // Swap or Set
+    if (current) {
+      this.inventory.add(current) // Unequip current
+    }
+
+    this.equipment[type] = item
+
+    // Remove from inventory
+    this.inventory.remove(item)
+
+    console.log(`Equipped: ${item.data.name}`)
+    this.updateStats()
+  }
+
+  unequipItem(slot: ItemType): void {
+    const current = this.equipment[slot]
+    if (current) {
+      this.inventory.add(current)
+      delete this.equipment[slot]
+      console.log(`Unequipped: ${current.data.name}`)
+      this.updateStats()
+    }
+  }
+
+  toggleInventory(): void {
+    this.isInventoryOpen = !this.isInventoryOpen
+  }
+
+  attack(): void {
+    if (this.isAttacking) return
+
+    this.isAttacking = true
+    this.isMoving = false
+    this.velocity.x = 0
+    this.velocity.y = 0
+
+    let dir = this.direction
+    if (dir === 'up') dir = 'up'
+
+    const animName = `attack_${dir}`
+    this.spriteAnimation.playOnce(animName, () => {
+      this.isAttacking = false
+      const idleAnim = `idle_${this.direction === 'up' ? 'left' : this.direction}`
+      this.spriteAnimation.play(idleAnim)
+    })
+
+    this.attackVisualTimer = this.ATTACK_VISUAL_DURATION
+  }
+
+  update(deltaTime: number = 0.016): void {
+    if (this.attackVisualTimer > 0) {
+      this.attackVisualTimer -= deltaTime
+    }
+
+    if (this.isAttacking) {
+      this.spriteAnimation.update(deltaTime)
+      return
+    }
+
+    if (this.tileMap) {
+      const config = getChapterConfig(1)
+      const offset = config.gameplayConfig.collisionYOffset
+      const allowance = config.gameplayConfig.collisionAllowance || 0
+      const timeScale = deltaTime * 60
+
+      const moveX = this.velocity.x * timeScale
+      const nextX = this.position.x + moveX
+
+      if (this.tileMap.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
+        this.position.x = nextX
+      }
+
+      const moveY = this.velocity.y * timeScale
+      const nextY = this.position.y + moveY
+
+      if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
+        this.position.y = nextY
+      }
+
+      const walkableArea = config.openWorldMapConfig.walkableArea
+      if (walkableArea) {
+        const BOUNDARY_MARGIN = 50
+        if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) this.position.x = walkableArea.minX + BOUNDARY_MARGIN
+        if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
+        if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) this.position.y = walkableArea.minY + BOUNDARY_MARGIN
+        if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
+      }
+    } else {
+      const timeScale = deltaTime * 60
+      this.position.x += this.velocity.x * timeScale
+      this.position.y += this.velocity.y * timeScale
+    }
+
+    if (this.isMoving) {
+      const animName = `walk_${this.direction}`
+      this.spriteAnimation.play(animName)
+    } else {
+      const animName = `idle_${this.direction === 'up' ? 'left' : this.direction}`
+      this.spriteAnimation.play(animName)
+    }
+
+    this.spriteAnimation.update(deltaTime)
+  }
+
+  /**
    * 플레이어 이동 처리
    */
   move(moveX: number, moveY: number): void {
-    // 챕터 설정에서 속도 가져오기
     const config = getChapterConfig(1)
-    this.speed = config.gameplayConfig.baseSpeed || 15
+    // this.speed is calculated in updateStats, logic removed from here
 
-    // 아이소메트릭 스마트 이동 (Context-Sensitive Blending)
-    // 입력 벡터를 4개의 주 방향(TR, BR, BL, TL) 성분으로 분해하고,
-    // 이동 가능한 방향의 성분만 합산하여 최종 이동 방향을 결정합니다.
     if (config.gameplayConfig.enableIsoInput) {
       if (Math.abs(moveX) > 0 || Math.abs(moveY) > 0) {
-        // 1. 입력 정규화
         const inputMag = Math.sqrt(moveX * moveX + moveY * moveY)
         const nInputX = moveX / inputMag
         const nInputY = moveY / inputMag
@@ -79,9 +354,8 @@ export class Player {
         const offset = config.gameplayConfig.collisionYOffset
         const allowance = config.gameplayConfig.collisionAllowance || 0
 
-        // 4방향 벡터 (TR, BR, BL, TL) - Screen Space
-        const X_COMP = 2 / 2.236 // ~0.894
-        const Y_COMP = 1 / 2.236 // ~0.447
+        const X_COMP = 2 / 2.236
+        const Y_COMP = 1 / 2.236
 
         const Dirs = [
           { name: 'TR', vx: X_COMP, vy: -Y_COMP },
@@ -132,7 +406,6 @@ export class Player {
 
     this.isMoving = true
 
-    // 대각선 이동시 속도 정규화
     const magnitude = Math.sqrt(moveX * moveX + moveY * moveY)
     if (magnitude > 0) {
       moveX /= magnitude
@@ -142,22 +415,15 @@ export class Player {
     this.velocity.x = moveX * this.speed
     this.velocity.y = moveY * this.speed
 
-    // 이동 방향 업데이트
     this.angle = Math.atan2(moveY, moveX)
-
-    // 8방향 방향 결정 (쿼터뷰용)
     this.updateDirection(moveX, moveY)
   }
 
-  /**
-   * 8방향 방향 업데이트
-   */
   private updateDirection(moveX: number, moveY: number): void {
-    // 위쪽 방향은 왼쪽 애니메이션 사용
     if (moveY < 0) {
       if (moveX < 0) this.direction = 'left'
       else if (moveX > 0) this.direction = 'right'
-      else this.direction = 'left' // 위쪽도 왼쪽 애니메이션
+      else this.direction = 'left'
     } else if (moveY > 0) {
       if (moveX < 0) this.direction = 'left'
       else if (moveX > 0) this.direction = 'right'
@@ -172,7 +438,6 @@ export class Player {
     const frameWidth = 341
     const frameHeight = 341
 
-    // Walk animations
     this.spriteAnimation.addAnimation({
       name: 'walk_down',
       frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3),
@@ -189,7 +454,6 @@ export class Player {
       frameRate: 8
     })
 
-    // Idle animations
     this.spriteAnimation.addAnimation({
       name: 'idle_down',
       frames: [createFramesFromGrid(0, 0, frameWidth, frameHeight, 1, 3)[0]],
@@ -206,10 +470,9 @@ export class Player {
       frameRate: 1
     })
 
-    // Attack animations (assuming same grid layout for fight.png)
     this.spriteAnimation.addAnimation({
       name: 'attack_down',
-      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3), // Using 3 frames for attack
+      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3),
       frameRate: 12,
       loop: false
     })
@@ -227,148 +490,6 @@ export class Player {
     })
   }
 
-  setFightImage(image: HTMLImageElement): void {
-    this.fightImage = image
-
-    // 전투 이미지를 로드하면 해당 이미지 크기에 맞춰 애니메이션 재설정 (5x5 그리드)
-    const totalWidth = image.naturalWidth
-    const totalHeight = image.naturalHeight
-    const cols = 5
-    const rows = 5
-
-    const frameWidth = totalWidth / cols
-    const frameHeight = totalHeight / rows
-
-    // Attack animations
-    // Row 0: Attack Down
-    this.spriteAnimation.addAnimation({
-      name: 'attack_down',
-      frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 5, cols), // 5 frames
-      frameRate: 12,
-      loop: false
-    })
-
-    // Row 1: Attack Left
-    this.spriteAnimation.addAnimation({
-      name: 'attack_left',
-      frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 5, cols),
-      frameRate: 12,
-      loop: false
-    })
-
-    // Row 2: Attack Right
-    this.spriteAnimation.addAnimation({
-      name: 'attack_right',
-      frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 5, cols),
-      frameRate: 12,
-      loop: false
-    })
-
-    // Row 3: Attack Up (if available, otherwise re-use Left/Right or specific logic)
-    // Assuming standard 4-dir might use row 3 for UP if 5 rows exist?
-    // Let's assume Row 3 is UP.
-    this.spriteAnimation.addAnimation({
-      name: 'attack_up',
-      frames: createFramesFromGrid(0, frameHeight * 3, frameWidth, frameHeight, 5, cols),
-      frameRate: 12,
-      loop: false
-    })
-  }
-
-  // ... existing code ...
-
-  attack(): void {
-    if (this.isAttacking) return
-
-    this.isAttacking = true
-    this.isMoving = false // Stop moving when attacking
-    this.velocity.x = 0
-    this.velocity.y = 0
-
-    // Up might use a dedicated row if we configured it, otherwise fallback
-    let dir = this.direction
-    if (dir === 'up') dir = 'up' // use explicit up animation
-
-    // If we didn't add 'attack_up' to animations list (which I did in previous step), 
-    // we need to make sure we use it.
-    // However, setupAnimations() added 'attack_down', 'attack_left', 'attack_right'.
-    // setFightImage() added 'attack_up'.
-
-    // If fight image is not loaded yet, we might crash if we try to play 'attack_up'. 
-    // But attack() checks isAttacking logic.
-
-    const animName = `attack_${dir}`
-    this.spriteAnimation.playOnce(animName, () => {
-      this.isAttacking = false
-      // Return to idle animation
-      const idleAnim = `idle_${this.direction === 'up' ? 'left' : this.direction}`
-      this.spriteAnimation.play(idleAnim)
-    })
-  }
-
-  update(deltaTime: number = 0.016): void {
-    // Attack state update
-    if (this.isAttacking) {
-      this.spriteAnimation.update(deltaTime)
-      return
-    }
-
-    if (this.tileMap) {
-      const config = getChapterConfig(1)
-      const offset = config.gameplayConfig.collisionYOffset
-      const allowance = config.gameplayConfig.collisionAllowance || 0
-      const timeScale = deltaTime * 60
-
-      const moveX = this.velocity.x * timeScale
-      const nextX = this.position.x + moveX
-
-      if (this.tileMap.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
-        this.position.x = nextX
-      }
-
-      const moveY = this.velocity.y * timeScale
-      const nextY = this.position.y + moveY
-
-      if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
-        this.position.y = nextY
-      }
-
-      // 맵 경계 강제 적용 (빨간 네모 밖으로 절대 나가지 못하게)
-      const walkableArea = config.openWorldMapConfig.walkableArea
-
-      if (walkableArea) {
-        const BOUNDARY_MARGIN = 50 // 경계에서 50px 안쪽까지만 허용
-
-        if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) {
-          this.position.x = walkableArea.minX + BOUNDARY_MARGIN
-        }
-        if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) {
-          this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
-        }
-        if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) {
-          this.position.y = walkableArea.minY + BOUNDARY_MARGIN
-        }
-        if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) {
-          this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
-        }
-      }
-    } else {
-      const timeScale = deltaTime * 60
-      this.position.x += this.velocity.x * timeScale
-      this.position.y += this.velocity.y * timeScale
-    }
-
-    if (this.isMoving) {
-      const animName = `walk_${this.direction}`
-      this.spriteAnimation.play(animName)
-    } else {
-      const animName = `idle_${this.direction === 'up' ? 'left' : this.direction}`
-      this.spriteAnimation.play(animName)
-    }
-
-    this.spriteAnimation.update(deltaTime)
-  }
-
   render(
     ctx: CanvasRenderingContext2D,
     image: HTMLImageElement | undefined,
@@ -378,8 +499,32 @@ export class Player {
     ctx.save()
     ctx.translate(screenX, screenY)
 
-    // Use fight image if attacking, otherwise normal sprite image
+    // 1. Shadow (Natural connection with map)
+    ctx.save()
+    ctx.scale(1.2, 0.4) // Squashed ellipse
+    ctx.beginPath()
+    ctx.arc(0, (this.height / 2) * 1.8, 40, 0, Math.PI * 2) // Adjust Y based on feet position
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+    ctx.shadowBlur = 10
+    ctx.shadowColor = 'black'
+    ctx.fill()
+    ctx.restore()
+
     const currentImage = (this.isAttacking && this.fightImage) ? this.fightImage : (this.spriteImage || image)
+
+    if (this.attackVisualTimer > 0) {
+      const remainingRatio = this.attackVisualTimer / this.ATTACK_VISUAL_DURATION
+      const range = 250
+      ctx.save()
+      ctx.beginPath()
+      ctx.fillStyle = `rgba(255, 50, 50, ${remainingRatio * 0.3})`
+      ctx.arc(0, 0, range, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.lineWidth = 2
+      ctx.strokeStyle = `rgba(255, 100, 100, ${remainingRatio * 0.8})`
+      ctx.stroke()
+      ctx.restore()
+    }
 
     if (currentImage && currentImage.complete && currentImage.naturalWidth !== 0) {
       const frame = this.spriteAnimation.getCurrentFrame()
@@ -391,11 +536,8 @@ export class Player {
           -this.width / 2, -this.height / 2, this.width, this.height
         )
       }
-    }
-    // Fallback: 빨간 원
-    else {
+    } else {
       ctx.fillStyle = '#ff4444'
-      // ... existing fallback ...
       ctx.beginPath()
       ctx.arc(0, 0, 25, 0, Math.PI * 2)
       ctx.fill()
@@ -410,6 +552,35 @@ export class Player {
       ctx.lineWidth = 3
       ctx.stroke()
     }
+
+    // 3. Health Bar (Point #4)
+    const barWidth = 80
+    const barHeight = 10
+    const yOffset = -this.height / 2 - 30
+
+    // Shadow for text/bar (User pointed #2 effect)
+    ctx.shadowColor = "rgba(0, 0, 0, 0.8)"
+    ctx.shadowBlur = 4
+    ctx.shadowOffsetX = 2
+    ctx.shadowOffsetY = 2
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+    ctx.fillRect(-barWidth / 2, yOffset, barWidth, barHeight)
+
+    // HP Fill (Gradient or solid)
+    const hpPercent = Math.max(0, this.hp / this.maxHp)
+    const grad = ctx.createLinearGradient(-barWidth / 2, 0, barWidth / 2, 0)
+    grad.addColorStop(0, '#2ecc71')
+    grad.addColorStop(1, '#27ae60')
+    ctx.fillStyle = grad
+    ctx.fillRect(-barWidth / 2 + 1, yOffset + 1, (barWidth - 2) * hpPercent, barHeight - 2)
+
+    // HP Text
+    ctx.fillStyle = 'white'
+    ctx.font = 'bold 12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(`${Math.ceil(this.hp)} / ${this.maxHp}`, 0, yOffset - 8)
 
     ctx.restore()
   }

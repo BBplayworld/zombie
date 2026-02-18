@@ -2,7 +2,7 @@ import { Vector2 } from '../utils/math'
 import { SpriteAnimation, createFramesFromGrid } from '../systems/SpriteAnimation'
 import { TileMap } from '../systems/TileMap'
 import { getChapterConfig } from '../config/chapters'
-import type { MonsterDetailConfig } from '../config/types'
+import type { MonsterDetailConfig, EntityStats } from '../config/types'
 
 export class Monster {
     public position: Vector2
@@ -12,6 +12,9 @@ export class Monster {
     public speed: number
     public angle: number
     public id: string
+    public hp: number
+    public maxHp: number
+    public stats: EntityStats
 
     // 상태
     public isMoving: boolean = false
@@ -19,7 +22,7 @@ export class Monster {
     public direction: 'idle' | 'up' | 'down' | 'left' | 'right' = 'down'
 
     // AI 상태
-    private state: 'wander' | 'chase' | 'idle' | 'return' | 'wait' = 'wander'
+    private state: 'wander' | 'chase' | 'idle' | 'return' | 'wait' | 'dying' = 'wander'
     private stateTimer: number = 0
     public spawnOrigin: Vector2
     private moveTarget: Vector2 | null = null
@@ -43,6 +46,12 @@ export class Monster {
         this.spawnOrigin = new Vector2(x, y)
         this.moveTarget = new Vector2(x, y)
         this.velocity = new Vector2(0, 0)
+
+        // HP 설정
+        this.stats = config.stats || { Vigor: 5, Spirit: 5, Might: 5, Agility: 5, Perception: 5 }
+        const vigorHp = this.stats.Vigor * 20
+        this.maxHp = config.hp || vigorHp || 100
+        this.hp = this.maxHp
         // 설정 저장
         this.config = config
 
@@ -115,7 +124,16 @@ export class Monster {
             this.velocity.x = 0
             this.velocity.y = 0
             this.isMoving = false
+            this.isMoving = false
             return // Skip this frame
+        }
+
+        if (this.state === 'dying') {
+            this.stateTimer -= deltaTime
+            if (this.stateTimer <= 0) {
+                this.isDead = true
+            }
+            return
         }
 
         // AI 업데이트 (State & Target decision)
@@ -369,9 +387,22 @@ export class Monster {
         if (dist > 0) {
             const nx = dx / dist
             const ny = dy / dist
-            this.position.x += nx * force
-            this.position.y += ny * force
-            // Note: Use tileMap check here ideally, but for now simple push
+
+            // Try explicit movement with collision check
+            const moveX = nx * force
+            const moveY = ny * force
+            const config = getChapterConfig(1)
+            const offset = config.gameplayConfig.collisionYOffset || 80
+
+            // X축 이동
+            if (this.tileMap?.isWalkableAtWorld(this.position.x + moveX, this.position.y + offset, 0)) {
+                this.position.x += moveX
+            }
+
+            // Y축 이동
+            if (this.tileMap?.isWalkableAtWorld(this.position.x, this.position.y + moveY + offset, 0)) {
+                this.position.y += moveY
+            }
         }
     }
 
@@ -380,6 +411,20 @@ export class Monster {
             this.direction = vx > 0 ? 'right' : 'left'
         } else {
             this.direction = vy > 0 ? 'down' : 'up' // up은 left 애니메이션 사용
+        }
+    }
+
+    public takeDamage(amount: number): void {
+        if (this.isDead || this.state === 'dying') return
+
+        this.hp -= amount
+        if (this.hp <= 0) {
+            this.hp = 0
+            this.state = 'dying'
+            this.stateTimer = 0.5 // 0.5초 동안 사망 애니메이션 (페이드아웃/깜빡임 등)
+            this.isMoving = false
+            this.velocity.x = 0
+            this.velocity.y = 0
         }
     }
 
@@ -400,6 +445,27 @@ export class Monster {
         ctx.save()
         ctx.translate(screenX, screenY)
 
+        // 1. Shadow (Natural connection with map)
+        ctx.save()
+        ctx.scale(1.2, 0.4) // Squashed ellipse
+        ctx.beginPath()
+        ctx.arc(0, (this.height / 2) * 0.9, 30, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+        ctx.shadowBlur = 10
+        ctx.shadowColor = 'black'
+        ctx.fill()
+        ctx.restore()
+
+        // Dying effect: fade out or flash
+        if (this.state === 'dying') {
+            const alpha = Math.max(0, this.stateTimer / 0.5)
+            ctx.globalAlpha = alpha
+            // Optional: flash red
+            if (Math.floor(Date.now() / 100) % 2 === 0) {
+                ctx.filter = 'brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)' // Red tint
+            }
+        }
+
         if (this.spriteImage && this.spriteImage.complete) {
             const frame = this.spriteAnimation.getCurrentFrame()
             if (frame) {
@@ -419,19 +485,41 @@ export class Monster {
 
         ctx.restore()
 
-        // Debug: Draw logical position (pivot)
-        // const screenPos = camera.worldToScreen(this.position.x, this.position.y)
-        // ctx.save()
-        // ctx.fillStyle = 'red'
-        // ctx.beginPath()
-        // ctx.arc(screenPos.x, screenPos.y, 5, 0, Math.PI * 2)
-        // ctx.fill()
-        // ctx.restore()
+        // Health Bar
+        if (this.state !== 'dying') {
+            const barWidth = 60
+            const barHeight = 8
+            const yOffset = -this.height / 2 - 20
 
-        // Debug: Show coordinates above monster
-        ctx.fillStyle = 'white'
-        ctx.font = '12px monospace'
-        ctx.textAlign = 'center'
-        ctx.fillText(`(${Math.floor(this.position.x)}, ${Math.floor(this.position.y)})`, 0, -this.height / 2 - 10)
+            ctx.save()
+            // Translate to top of monster
+            ctx.translate(screenX, screenY)
+
+            ctx.shadowColor = "rgba(0, 0, 0, 0.8)"
+            ctx.shadowBlur = 4
+            ctx.shadowOffsetX = 2
+            ctx.shadowOffsetY = 2
+
+            // Background
+            ctx.fillStyle = 'black'
+            ctx.fillRect(-barWidth / 2, yOffset, barWidth, barHeight)
+
+            // HP
+            const hpPercent = Math.max(0, this.hp / this.maxHp)
+            ctx.fillStyle = 'red'
+            ctx.fillRect(-barWidth / 2 + 1, yOffset + 1, (barWidth - 2) * hpPercent, barHeight - 2)
+
+            // Text
+            ctx.fillStyle = 'white'
+            ctx.font = '10px Arial'
+            ctx.textAlign = 'center'
+            ctx.shadowColor = "rgba(0, 0, 0, 0.8)"
+            ctx.shadowBlur = 4
+            ctx.shadowOffsetX = 2
+            ctx.shadowOffsetY = 2
+            ctx.fillText(`${Math.ceil(this.hp)}/${this.maxHp}`, 0, yOffset - 5)
+
+            ctx.restore()
+        }
     }
 }

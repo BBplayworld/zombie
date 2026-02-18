@@ -1,9 +1,12 @@
 .gameWrapper {
     position: relative;
-    width: 100vw;
+    width: 100%;
+    max-width: 2400px;
     height: 100vh;
+    margin: 0 auto;
     overflow: hidden;
     background: #000;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
 }
 
 .gameCanvas {

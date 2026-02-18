@@ -91,13 +91,69 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
             }
         },
 
+        // 아이템 드랍 설정
+        itemDropConfig: {
+            globalDropRate: 0.3, // 30% 확률로 아이템 드랍
+            rarities: {
+                'Common': {
+                    color: '#ffffff',
+                    dropChance: 0.50, // 50%
+                    optionCount: 1,
+                    statRanges: {
+                        flat: { min: 1, max: 10, chance: 1.0 },
+                        percent: { min: 0.01, max: 0.05, chance: 0.2 } // 20% 확률로 퍼센트 옵션 붙음
+                    }
+                },
+                'Uncommon': {
+                    color: '#1eff00',
+                    dropChance: 0.30, // 30%
+                    optionCount: 2,
+                    statRanges: {
+                        flat: { min: 5, max: 20, chance: 1.0 },
+                        percent: { min: 0.03, max: 0.08, chance: 0.5 }
+                    }
+                },
+                'Rare': {
+                    color: '#0070dd',
+                    dropChance: 0.15, // 15%
+                    optionCount: 3,
+                    statRanges: {
+                        flat: { min: 10, max: 40, chance: 1.0 },
+                        percent: { min: 0.05, max: 0.12, chance: 0.8 }
+                    }
+                },
+                'Epic': {
+                    color: '#a335ee',
+                    dropChance: 0.04, // 4%
+                    optionCount: 4,
+                    statRanges: {
+                        flat: { min: 30, max: 80, chance: 1.0 },
+                        percent: { min: 0.10, max: 0.20, chance: 1.0 }
+                    }
+                },
+                'Legendary': {
+                    color: '#ff8000',
+                    dropChance: 0.01, // 1%
+                    optionCount: 5,
+                    statRanges: {
+                        flat: { min: 50, max: 150, chance: 1.0 },
+                        percent: { min: 0.15, max: 0.30, chance: 1.0 }
+                    }
+                }
+            }
+        },
+
         // 에셋 경로 설정
         assetConfig: {
             baseTile: '/assets/chapter-1/tile/basetile-1.png',
             backgroundTile: '/assets/chapter-1/tile/basetile-2.png',
             player: '/assets/chapter-1/player/player.png',
             fight: '/assets/chapter-1/player/fight.png',
-            mapBackground: '/assets/chapter-1/map/map-1_3072.png'
+            mapBackground: '/assets/chapter-1/map/map-1_3072.png',
+            helmet: '/assets/chapter-1/item/helmet.png',
+            armor: '/assets/chapter-1/item/armor.png',
+            weapon: '/assets/chapter-1/item/weapon.png',
+            window: '/assets/chapter-1/player/inventory.png'
         },
 
         // 몬스터 종류별 상세 설정
@@ -109,7 +165,8 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 moveSpeed: 3,
                 autoAttack: false,
                 regenTime: 30,
-                detectionRange: 150
+                detectionRange: 150,
+                stats: { Vigor: 10, Spirit: 5, Might: 10, Agility: 5, Perception: 5 }
             },
             {
                 id: 'mon_2',
@@ -118,7 +175,8 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 moveSpeed: 6,
                 autoAttack: true,
                 regenTime: 45,
-                detectionRange: 200
+                detectionRange: 200,
+                stats: { Vigor: 5, Spirit: 5, Might: 5, Agility: 15, Perception: 10 }
             },
             {
                 id: 'mon_3',
@@ -127,7 +185,8 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 moveSpeed: 2,
                 autoAttack: true,
                 regenTime: 60,
-                detectionRange: 100
+                detectionRange: 100,
+                stats: { Vigor: 20, Spirit: 5, Might: 15, Agility: 2, Perception: 5 }
             },
             {
                 id: 'mon_4',
@@ -136,7 +195,8 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 moveSpeed: 4,
                 autoAttack: false,
                 regenTime: 40,
-                detectionRange: 180
+                detectionRange: 180,
+                stats: { Vigor: 5, Spirit: 15, Might: 5, Agility: 10, Perception: 15 }
             },
             {
                 id: 'mon_5',
@@ -145,7 +205,8 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 moveSpeed: 5,
                 autoAttack: true,
                 regenTime: 120,
-                detectionRange: 300
+                detectionRange: 300,
+                stats: { Vigor: 50, Spirit: 30, Might: 40, Agility: 20, Perception: 20 }
             }
         ],
 
