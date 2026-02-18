@@ -78,7 +78,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
         // 게임플레이 설정
         gameplayConfig: {
             mapGenerationRatio: 0.7,
-            baseSpeed: 8,
+            baseSpeed: 5,
             collisionYOffset: 80,
             collisionAllowance: 0,
             enableIsoInput: true,
@@ -166,7 +166,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 autoAttack: false,
                 regenTime: 30,
                 detectionRange: 150,
-                stats: { Vigor: 10, Spirit: 5, Might: 10, Agility: 5, Perception: 5 }
+                stats: { Vigor: 10, Spirit: 5, Might: 10, Agility: 5, Luck: 5 }
             },
             {
                 id: 'mon_2',
@@ -176,7 +176,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 autoAttack: true,
                 regenTime: 45,
                 detectionRange: 200,
-                stats: { Vigor: 5, Spirit: 5, Might: 5, Agility: 15, Perception: 10 }
+                stats: { Vigor: 5, Spirit: 5, Might: 5, Agility: 15, Luck: 10 }
             },
             {
                 id: 'mon_3',
@@ -186,7 +186,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 autoAttack: true,
                 regenTime: 60,
                 detectionRange: 100,
-                stats: { Vigor: 20, Spirit: 5, Might: 15, Agility: 2, Perception: 5 }
+                stats: { Vigor: 20, Spirit: 5, Might: 15, Agility: 2, Luck: 5 }
             },
             {
                 id: 'mon_4',
@@ -196,7 +196,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 autoAttack: false,
                 regenTime: 40,
                 detectionRange: 180,
-                stats: { Vigor: 5, Spirit: 15, Might: 5, Agility: 10, Perception: 15 }
+                stats: { Vigor: 5, Spirit: 15, Might: 5, Agility: 10, Luck: 15 }
             },
             {
                 id: 'mon_5',
@@ -206,7 +206,7 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
                 autoAttack: true,
                 regenTime: 120,
                 detectionRange: 300,
-                stats: { Vigor: 50, Spirit: 30, Might: 40, Agility: 20, Perception: 20 }
+                stats: { Vigor: 50, Spirit: 30, Might: 40, Agility: 20, Luck: 20 }
             }
         ],
 

@@ -7,200 +7,219 @@ import { t, setLanguage } from '@/lib/game/config/Locale'
 
 type GameState = 'lang_select' | 'loading' | 'ready' | 'playing' | 'paused' | 'gameover'
 
-/**
- * 게임 캔버스 컴포넌트
- */
+const ASSET_LABELS: Record<string, string> = {
+    mapBackground: '월드 맵',
+    player: '플레이어',
+    fight: '전투 스프라이트',
+    helmet: '아이템: 투구',
+    armor: '아이템: 갑옷',
+    weapon: '아이템: 무기',
+    window: 'UI 윈도우',
+    baseTile: '기본 타일',
+    backgroundTile: '배경 타일',
+    mon_1: '몬스터: Walker',
+    mon_2: '몬스터: Runner',
+    mon_3: '몬스터: Tank',
+    mon_4: '몬스터: Ghost',
+    mon_5: '몬스터: Boss',
+}
+
 export default function GameCanvas() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const gameEngineRef = useRef<GameEngine | null>(null)
+    const engineInitRef = useRef(false) // 엔진 초기화 중복 방지
 
     const [gameState, setGameState] = useState<GameState>('lang_select')
     const [loadingProgress, setLoadingProgress] = useState(0)
+    const [loadingKey, setLoadingKey] = useState('')
+    const [loadedCount, setLoadedCount] = useState(0)
+    const [totalCount, setTotalCount] = useState(0)
 
-    // Language Selection Handler
     const handleLanguageSelect = (lang: 'ko' | 'en') => {
         setLanguage(lang)
         setGameState('loading')
     }
 
-    /**
-     * 컴포넌트 마운트 시 게임 초기화 시퀀스 시작
-     */
+    /* ── 캔버스 리사이즈 + ESC 키 (마운트~언마운트 전체) ── */
     useEffect(() => {
-        if (gameState === 'lang_select') return
+        const canvas = canvasRef.current
+        if (!canvas) return
 
-        console.log('🎬 [SEQUENCE START] GameCanvas mounted, starting initialization...')
+        const resize = () => {
+            const parent = canvas.parentElement
+            if (!parent) return
+            canvas.width = parent.clientWidth
+            canvas.height = parent.clientHeight
+            gameEngineRef.current?.resize(canvas.width, canvas.height)
+        }
+        resize()
+        window.addEventListener('resize', resize)
 
-        if (!canvasRef.current) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.code !== 'Escape') return
+            const eng = gameEngineRef.current
+            if (!eng) return
+            if (eng.state === 'playing') {
+                eng.pause()
+                setGameState('paused')
+            } else if (eng.state === 'paused') {
+                eng.resume()
+                setGameState('playing')
+            }
+        }
+        window.addEventListener('keydown', onKey)
+
+        return () => {
+            window.removeEventListener('resize', resize)
+            window.removeEventListener('keydown', onKey)
+        }
+    }, []) // 마운트 1회만
+
+    /* ── 게임 엔진 초기화 (lang_select → loading 전환 시 1회) ── */
+    useEffect(() => {
+        if (gameState !== 'loading') return
+        if (engineInitRef.current) return // 이미 초기화 중이면 스킵
+        engineInitRef.current = true
 
         const canvas = canvasRef.current
+        if (!canvas) return
 
-        // Canvas 크기 설정
-        const resizeCanvas = () => {
-            if (!canvas.parentElement) return
-
-            canvas.width = canvas.parentElement.clientWidth
-            canvas.height = canvas.parentElement.clientHeight
-
-            if (gameEngineRef.current) {
-                gameEngineRef.current.resize(canvas.width, canvas.height)
-            }
+        // 이 시점에 캔버스 크기 재설정
+        const parent = canvas.parentElement
+        if (parent) {
+            canvas.width = parent.clientWidth
+            canvas.height = parent.clientHeight
         }
 
-        resizeCanvas()
-        window.addEventListener('resize', resizeCanvas)
-
-        // 게임 초기화 시퀀스 실행
-        const initializeGameSequence = async (canvas: HTMLCanvasElement) => {
+        const init = async () => {
             try {
-                // ========== STEP 1: GameEngine 생성 ==========
-                console.log('🎮 [SEQUENCE] Creating GameEngine instance...')
-                const gameEngine = new GameEngine(canvas)
-                gameEngineRef.current = gameEngine
+                const engine = new GameEngine(canvas)
+                gameEngineRef.current = engine
 
-                // ========== STEP 2: 리소스 로딩 ==========
-                console.log('📦 [SEQUENCE] Starting resource loading...')
+                engine.resourceLoader.onProgress((progress, key) => {
+                    setLoadingProgress(progress)
+                    setLoadingKey(key)
+                    setLoadedCount(engine.resourceLoader.getLoadedCount())
+                    setTotalCount(engine.resourceLoader.getTotalCount())
+                })
 
-                // Fallback for progress
-                setLoadingProgress(10)
-
-                // 로딩 진행률 모니터링 (ResourceLoader event)
-                // Note: resourceLoader properties should be public or have getter
-                if (gameEngine.resourceLoader) {
-                    // Check if onProgress exists (it might be private in ResourceLoader, assuming it was added)
-                    // If not, we just await.
-                }
-
-                // 리소스 로드 시작
-                await gameEngine.loadResources()
+                setLoadingProgress(5)
+                await engine.loadResources()
                 setLoadingProgress(100)
-
-                console.log('✅ [SEQUENCE] Resources loaded, transitioning to READY state')
                 setGameState('ready')
-
-            } catch (error) {
-                console.error('❌ [SEQUENCE ERROR] Failed to initialize game:', error)
+            } catch (e) {
+                console.error('Game init failed:', e)
+                engineInitRef.current = false // 실패 시 재시도 가능
             }
         }
+        init()
 
-        initializeGameSequence(canvas)
+        // ※ 이 useEffect cleanup 에서 engine.destroy()를 호출하지 않음
+        //    → loading→ready 전환 시 리소스 이미지가 사라지는 버그 방지
+    }, [gameState])
 
-        // ESC 키로 일시정지
-        const handleEscKey = (e: KeyboardEvent) => {
-            if (e.code === 'Escape') {
-                if (gameState === 'playing') {
-                    gameEngineRef.current?.pause()
-                    setGameState('paused')
-                } else if (gameState === 'paused') {
-                    gameEngineRef.current?.resume()
-                    setGameState('playing')
-                }
-            }
-        }
-
-        window.addEventListener('keydown', handleEscKey)
-
-        // Cleanup
+    /* ── 컴포넌트 언마운트 시에만 엔진 정리 ── */
+    useEffect(() => {
         return () => {
-            console.log('🧹 Cleaning up GameCanvas...')
-            window.removeEventListener('resize', resizeCanvas)
-            window.removeEventListener('keydown', handleEscKey)
             gameEngineRef.current?.destroy()
         }
-    }, [gameState === 'lang_select']) // Only re-run if lang_select changes to loading
+    }, [])
 
-    /**
-     * STEP 3: 게임 시작 (사용자가 버튼 클릭 시)
-     */
     const startGame = () => {
-        console.log('🚀 [SEQUENCE] User clicked START, launching game loop...')
-
-        if (gameEngineRef.current) {
-            gameEngineRef.current.start()
-            setGameState('playing')
-            console.log('✅ [SEQUENCE COMPLETE] Game is now running!')
-        }
+        gameEngineRef.current?.start()
+        setGameState('playing')
     }
 
-    /**
-     * 게임 재개
-     */
     const resumeGame = () => {
-        if (gameEngineRef.current) {
-            gameEngineRef.current.resume()
-            setGameState('playing')
-        }
+        gameEngineRef.current?.resume()
+        setGameState('playing')
     }
+
+    const isPreGame = ['lang_select', 'loading', 'ready'].includes(gameState)
 
     return (
         <div className={styles.gameWrapper}>
-            {/* 언어 선택 화면 */}
-            {gameState === 'lang_select' && (
-                <div className={styles.loadingScreen}>
-                    <div className={styles.loadingContent}>
-                        <h1>Select Language / 언어 선택</h1>
-                        <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '30px' }}>
-                            <button
-                                onClick={() => handleLanguageSelect('en')}
-                                className={styles.btnStart}
-                                style={{ padding: '15px 30px' }}
-                            >
-                                English
-                            </button>
-                            <button
-                                onClick={() => handleLanguageSelect('ko')}
-                                className={styles.btnStart}
-                                style={{ padding: '15px 30px' }}
-                            >
-                                한국어
-                            </button>
+
+            {/* ── 게임 전 화면 (배경 이미지 공유) ── */}
+            {isPreGame && (
+                <div className={styles.titleScreen}>
+                    <img
+                        src="/assets/main/start.png"
+                        alt="title background"
+                        className={styles.titleBg}
+                        draggable={false}
+                    />
+                    <div className={styles.vignetteTop} />
+                    <div className={styles.bottomPanel} />
+
+                    {/* 언어 선택 */}
+                    {gameState === 'lang_select' && (
+                        <div className={styles.overlay}>
+                            <div className={styles.langBox}>
+                                <p className={styles.langTitle}>Select Language / 언어 선택</p>
+                                <div className={styles.langButtons}>
+                                    <button className={styles.fantasyBtn} onClick={() => handleLanguageSelect('en')}>
+                                        <span className={styles.fantasyBtnInner}>English</span>
+                                    </button>
+                                    <button className={styles.fantasyBtn} onClick={() => handleLanguageSelect('ko')}>
+                                        <span className={styles.fantasyBtnInner}>한국어</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-            )}
+                    )}
 
-            {/* 로딩 화면 */}
-            {gameState === 'loading' && (
-                <div className={styles.loadingScreen}>
-                    <div className={styles.loadingContent}>
-                        <h1>{t('game.loading')}</h1>
-                        <div className={styles.loadingBar}>
-                            <div
-                                className={styles.loadingProgress}
-                                style={{ width: `${loadingProgress}%` }}
-                            />
+                    {/* 리소스 로딩 */}
+                    {gameState === 'loading' && (
+                        <div className={styles.overlay}>
+                            <div className={styles.loadBox}>
+                                <p className={styles.loadTitle}>리소스 다운로드 중...</p>
+                                <p className={styles.loadFile}>
+                                    {ASSET_LABELS[loadingKey] ?? loadingKey}
+                                    {totalCount > 0 && (
+                                        <span className={styles.loadCount}>&nbsp;({loadedCount} / {totalCount})</span>
+                                    )}
+                                </p>
+                                <div className={styles.progressWrap}>
+                                    <div className={styles.progressOuter}>
+                                        <div
+                                            className={styles.progressFill}
+                                            style={{ width: `${loadingProgress}%` }}
+                                        />
+                                        <div className={styles.progressGlow} style={{ left: `${loadingProgress}%` }} />
+                                    </div>
+                                    <span className={styles.progressPct}>{loadingProgress.toFixed(0)}%</span>
+                                </div>
+                            </div>
                         </div>
-                        <p>{loadingProgress.toFixed(0)}%</p>
-                    </div>
+                    )}
+
+                    {/* 게임 시작 버튼 */}
+                    {gameState === 'ready' && (
+                        <div className={styles.overlay}>
+                            <div className={styles.startBox}>
+                                <button className={styles.startBtn} onClick={startGame}>
+                                    <span className={styles.startBtnInner}>{t('game.start')}</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* 시작 버튼 (로딩 완료 후) */}
-            {gameState === 'ready' && (
-                <div className={styles.startScreen}>
-                    <div className={styles.startContent}>
-                        <h1>🧟 Zombie MMORPG</h1>
-                        <p className={styles.subtitle}>Open World ARPG</p>
-                        <button onClick={startGame} className={styles.btnStart}>
-                            {t('game.start')}
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* 일시정지 화면 */}
+            {/* 일시정지 */}
             {gameState === 'paused' && (
                 <div className={styles.pauseScreen}>
-                    <div className={styles.pauseContent}>
-                        <h2>{t('game.paused')}</h2>
-                        <button onClick={resumeGame} className={styles.btnResume}>
-                            {t('game.resume')}
+                    <div className={styles.pauseBox}>
+                        <h2 className={styles.pauseTitle}>{t('game.paused')}</h2>
+                        <button className={styles.fantasyBtn} onClick={resumeGame}>
+                            <span className={styles.fantasyBtnInner}>{t('game.resume')}</span>
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* 게임 Canvas */}
+            {/* 게임 캔버스 (항상 DOM에 존재해야 함) */}
             <canvas
                 ref={canvasRef}
                 className={`${styles.gameCanvas} ${gameState === 'paused' ? styles.blur : ''}`}

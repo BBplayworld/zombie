@@ -2,7 +2,7 @@ import { Player } from '../entities/Player'
 import { ItemType } from '../config/types'
 import { inventoryConfig } from '../config/Inventory'
 import { InputManager } from '../systems/InputManager'
-import { t } from '../config/Locale'
+import { t, currentLang } from '../config/Locale'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { Item } from '../entities/Item'
 
@@ -61,10 +61,7 @@ export class InventoryManager {
         const { width: winW, height: winH } = cfg.window
 
         ctx.save()
-        ctx.shadowColor = "rgba(0, 0, 0, 0.8)"
-        ctx.shadowBlur = 10
-        ctx.shadowOffsetX = 5
-        ctx.shadowOffsetY = 5
+        // 박스 섀도우 없음 - 그라데이션 오버레이로 대체
 
         if (windowImg) {
             ctx.drawImage(windowImg, winPos.x, winPos.y, winW, winH)
@@ -92,61 +89,83 @@ export class InventoryManager {
     }
 
     /**
-     * 플레이어 스탯 정보 렌더링
+     * 플레이어 스탯 정보 렌더링 (이름 · 값 · 설명 포함)
      */
     private renderStats(ctx: CanvasRenderingContext2D, winPos: { x: number, y: number }, cfg: any): void {
         const statX = winPos.x + cfg.statsArea.x
         let statY = winPos.y + cfg.statsArea.y
         const lineHeight = cfg.statsArea.lineHeight
+        const fontSize = cfg.statsArea.fontSize
+        const descSize = fontSize - 4          // 설명 텍스트 크기
+        const fontFamily = 'monospace'
+        const labelColW = 90
 
         ctx.save()
-        // Attributes Title
-        ctx.font = `bold ${cfg.statsArea.titleFontSize}px ${cfg.textStyles.fontFamily}`
-        ctx.fillStyle = cfg.textStyles.title
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
         this.applyTextShadow(ctx)
-        ctx.fillText(t('inventory.attributes'), statX, statY)
-        statY += lineHeight + 10
 
-        // Core Stats
-        ctx.font = `${cfg.statsArea.fontSize}px monospace`
-        const stats: string[] = ['Vigor', 'Spirit', 'Might', 'Agility', 'Perception']
-        stats.forEach(key => {
+        // ── 기본 능력치 타이틀 ──
+        ctx.font = `bold ${cfg.statsArea.titleFontSize}px ${fontFamily}`
+        ctx.fillStyle = cfg.textStyles.title
+        ctx.fillText(t('inventory.attributes'), statX, statY)
+        statY += lineHeight + 4
+
+        // ── 기본 능력치 행 (이름 + 값 + 설명) ──
+        const coreStats: string[] = ['Vigor', 'Spirit', 'Might', 'Agility', 'Luck']
+        coreStats.forEach(key => {
             const val = (this.player.stats as any)[key]
+
+            ctx.font = `${fontSize}px ${fontFamily}`
             ctx.fillStyle = cfg.textStyles.label
             ctx.fillText(`${t(`inventory.stats.${key}`)}:`, statX, statY)
 
-            ctx.font = `bold ${cfg.statsArea.fontSize}px monospace`
+            ctx.font = `bold ${fontSize}px ${fontFamily}`
             ctx.fillStyle = cfg.textStyles.value
-            ctx.fillText(` ${val}`, statX + 110, statY)
+            ctx.fillText(String(val), statX + labelColW, statY)
 
-            ctx.font = `${cfg.statsArea.fontSize}px monospace` // Reset font for next key
-            statY += lineHeight
+            statY += lineHeight - 6
+
+            // 설명 줄
+            ctx.font = `italic ${descSize}px ${fontFamily}`
+            ctx.fillStyle = 'rgba(160,160,160,0.85)'
+            ctx.fillText(t(`inventory.statDesc.${key}`), statX, statY)
+            statY += descSize + 20
         })
 
-        statY += 25
+        statY += 10
 
-        // Combat Stats Title
-        ctx.font = `bold ${cfg.statsArea.titleFontSize}px ${cfg.textStyles.fontFamily}`
+        // ── 전투 능력치 타이틀 ──
+        ctx.font = `bold ${cfg.statsArea.titleFontSize}px ${fontFamily}`
         ctx.fillStyle = cfg.textStyles.title
         ctx.fillText(t('inventory.combatStats'), statX, statY)
-        statY += lineHeight + 10
+        statY += lineHeight + 4
 
-        // Combat Stats Values
-        const drawCombatStat = (labelKey: string, val: string) => {
-            ctx.font = `${cfg.statsArea.fontSize}px monospace`
+        // ── 전투 능력치 행 (이름 + 값 + 설명) ──
+        const combatRows: { key: string, val: string }[] = [
+            { key: 'HP', val: `${Math.ceil(this.player.hp)} / ${this.player.maxHp}` },
+            { key: 'Damage', val: String(this.player.damage) },
+            { key: 'Speed', val: this.player.speed.toFixed(1) },
+            { key: 'Crit', val: `${(this.player.critChance * 100).toFixed(0)}%` }
+        ]
+
+        combatRows.forEach(({ key, val }) => {
+            ctx.font = `${fontSize}px ${fontFamily}`
             ctx.fillStyle = cfg.textStyles.label
-            ctx.fillText(`${t(`inventory.stats.${labelKey}`)}:`, statX, statY)
+            ctx.fillText(`${t(`inventory.stats.${key}`)}:`, statX, statY)
 
-            ctx.font = `bold ${cfg.statsArea.fontSize}px monospace`
-            ctx.fillStyle = '#ff8c00' // Highlight secondary color
-            ctx.fillText(` ${val}`, statX + 110, statY)
-            statY += lineHeight
-        }
+            ctx.font = `bold ${fontSize}px ${fontFamily}`
+            ctx.fillStyle = '#ff8c00'
+            ctx.fillText(val, statX + labelColW, statY)
 
-        drawCombatStat('HP', `${Math.ceil(this.player.hp)} / ${this.player.maxHp}`)
-        drawCombatStat('Damage', `${this.player.damage}`)
-        drawCombatStat('Speed', `${this.player.speed.toFixed(1)}`)
-        drawCombatStat('Crit', `${(this.player.critChance * 100).toFixed(0)}%`)
+            statY += lineHeight - 6
+
+            ctx.font = `italic ${descSize}px ${fontFamily}`
+            ctx.fillStyle = 'rgba(160,160,160,0.85)'
+            ctx.fillText(t(`inventory.statDesc.${key}`), statX, statY)
+            statY += descSize + 20
+        })
+
         ctx.restore()
     }
 
@@ -154,26 +173,32 @@ export class InventoryManager {
      * 장착 슬롯 렌더링
      */
     private renderEquipment(ctx: CanvasRenderingContext2D, resourceLoader: ResourceLoader, winPos: { x: number, y: number }, cfg: any): void {
+        ctx.save()
         Object.entries(cfg.equipmentSlots).forEach(([slotName, rect]: [string, any]) => {
             const item = this.player.equipment[slotName as ItemType]
             const slotX = winPos.x + rect.x
             const slotY = winPos.y + rect.y
 
-            // 슬롯 배경/테두리
             ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
             ctx.fillRect(slotX, slotY, rect.width, rect.height)
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+            ctx.lineWidth = 1
             ctx.strokeRect(slotX, slotY, rect.width, rect.height)
 
             if (item) {
                 this.renderItemIcon(ctx, resourceLoader, item, slotX, slotY, rect.width, rect.height)
             } else {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
-                ctx.font = '10px sans-serif'
+                ctx.font = '10px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText(slotName.toUpperCase(), slotX + rect.width / 2, slotY + rect.height / 2 + 5)
+                ctx.textBaseline = 'middle'
+                const label = t(`inventory.itemTypes.${slotName}`) !== `inventory.itemTypes.${slotName}`
+                    ? t(`inventory.itemTypes.${slotName}`)
+                    : slotName
+                ctx.fillText(label, slotX + rect.width / 2, slotY + rect.height / 2)
             }
         })
+        ctx.restore()
     }
 
     /**
@@ -336,12 +361,13 @@ export class InventoryManager {
 
         let currentY = ty + padding + 20
 
-        // Title
-        ctx.fillStyle = '#fff'
-        ctx.font = 'bold 18px serif'
+        // Title - locale 처리된 이름, 등급 색상 적용
+        const localizedName = item.data.nameLocale?.[currentLang] ?? item.data.name
+        ctx.fillStyle = this.getRarityColor(item.data.rarity)
+        ctx.font = 'bold 18px monospace'
         ctx.textAlign = 'center'
         this.applyTextShadow(ctx)
-        ctx.fillText(item.data.name, tx + width / 2, currentY)
+        ctx.fillText(localizedName, tx + width / 2, currentY)
         currentY += 15
 
         // Image
@@ -352,10 +378,11 @@ export class InventoryManager {
             currentY += imgSize + 15
         }
 
-        // Rarity
+        // Rarity - locale 처리
+        const localizedRarity = t(`inventory.rarities.${item.data.rarity}`)
         ctx.fillStyle = this.getRarityColor(item.data.rarity)
-        ctx.font = 'italic 14px serif'
-        ctx.fillText(item.data.rarity, tx + width / 2, currentY)
+        ctx.font = 'italic 14px monospace'
+        ctx.fillText(localizedRarity, tx + width / 2, currentY)
         currentY += 25
 
         // Stats

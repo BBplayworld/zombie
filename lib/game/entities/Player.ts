@@ -21,11 +21,11 @@ export class Player {
 
   // 능력치 및 아이템
   public stats: EntityStats = {
-    Vigor: 10,
+    Vigor: 20,
     Spirit: 10,
     Might: 10,
     Agility: 10,
-    Perception: 10
+    Luck: 10
   }
   public damage: number = 10
   public critChance: number = 0
@@ -63,7 +63,7 @@ export class Player {
     this.velocity = new Vector2(0, 0)
     this.width = 200
     this.height = 200
-    this.speed = 25
+    this.speed = 0
     this.angle = 0
 
     // 초기 능력치 기반 HP 설정
@@ -149,12 +149,12 @@ export class Player {
       Spirit: 10,
       Might: 10,
       Agility: 10,
-      Perception: 10
+      Luck: 10
     }
 
     const totals: Record<StatType, number> = { ...baseStats }
     const percents: Record<StatType, number> = {
-      Vigor: 0, Spirit: 0, Might: 0, Agility: 0, Perception: 0
+      Vigor: 0, Spirit: 0, Might: 0, Agility: 0, Luck: 0
     }
 
     // 2. 아이템 옵션 합산
@@ -175,7 +175,7 @@ export class Player {
     this.stats.Spirit = Math.floor(totals.Spirit * (1 + percents.Spirit))
     this.stats.Might = Math.floor(totals.Might * (1 + percents.Might))
     this.stats.Agility = Math.floor(totals.Agility * (1 + percents.Agility))
-    this.stats.Perception = Math.floor(totals.Perception * (1 + percents.Perception))
+    this.stats.Luck = Math.floor(totals.Luck * (1 + percents.Luck))
 
     // 4. 파생 능력치 계산 (Derived Stats)
 
@@ -187,13 +187,13 @@ export class Player {
     // Speed = Base 15 + Agility * 0.5
     const config = getChapterConfig(1)
     const baseSpeed = config.gameplayConfig.baseSpeed || 15
-    this.speed = baseSpeed + (this.stats.Agility * 0.5)
+    this.speed = baseSpeed + (this.stats.Agility * 0.08)
 
     // Damage = Base 10 + Might * 2
     this.damage = 10 + this.stats.Might * 2
 
-    // Crit Chance = Perception * 0.01 (1%)
-    this.critChance = this.stats.Perception * 0.01
+    // Crit Chance = Luck * 0.01 (1%)
+    this.critChance = this.stats.Luck * 0.01
 
     console.log('Updated Stats:', this.stats)
     console.log(`Derived: HP ${this.maxHp}, DMG ${this.damage}, SPD ${this.speed}, CRIT ${this.critChance.toFixed(2)}`)
@@ -578,9 +578,10 @@ export class Player {
 
     // HP Text
     ctx.fillStyle = 'white'
-    ctx.font = 'bold 12px sans-serif'
+    ctx.font = 'bold 11px monospace'
     ctx.textAlign = 'center'
-    ctx.fillText(`${Math.ceil(this.hp)} / ${this.maxHp}`, 0, yOffset - 8)
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText(`${Math.ceil(this.hp)} / ${this.maxHp}`, 0, yOffset - 6)
 
     ctx.restore()
   }

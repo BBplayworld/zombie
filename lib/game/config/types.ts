@@ -185,15 +185,15 @@ export interface ChapterConfig {
 // 2. Spirit (정신): 스킬 쿨타임 감소 및 마법 저항
 // 3. Might (강인함): 물리 공격력 및 밀쳐내기 힘
 // 4. Agility (민첩): 이동 속도 및 공격 속도
-// 5. Perception (통찰): 치명타 확률 및 적 감지 범위
-export type StatType = 'Vigor' | 'Spirit' | 'Might' | 'Agility' | 'Perception'
+// 5. Luck (행운): 치명타 확률 및 적 감지 범위
+export type StatType = 'Vigor' | 'Spirit' | 'Might' | 'Agility' | 'Luck'
 
 export interface EntityStats {
     Vigor: number
     Spirit: number
     Might: number
     Agility: number
-    Perception: number
+    Luck: number
 }
 
 // 아이템 등급
@@ -209,6 +209,7 @@ export interface ItemStatValue {
 export interface ItemData {
     id: string
     name: string
+    nameLocale?: Record<string, string> // locale별 이름 (예: { ko: '견고한 투구', en: 'Sturdy Helmet' })
     type: ItemType
     rarity: ItemRarity
     stats: Partial<Record<StatType, ItemStatValue>> // 등급에 따라 여러 능력치 보유

@@ -1,3 +1,6 @@
+/* ───────────────────────────────────────────────────────────
+   공통 래퍼
+─────────────────────────────────────────────────────────── */
 .gameWrapper {
     position: relative;
     width: 100%;
@@ -6,7 +9,6 @@
     margin: 0 auto;
     overflow: hidden;
     background: #000;
-    box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
 }
 
 .gameCanvas {
@@ -17,156 +19,364 @@
 }
 
 .gameCanvas.blur {
-    filter: blur(5px);
+    filter: blur(6px) brightness(0.5);
 }
 
-/* 로딩 화면 */
-.loadingScreen {
+/* ───────────────────────────────────────────────────────────
+   타이틀 화면 (lang_select / loading / ready 공용)
+─────────────────────────────────────────────────────────── */
+.titleScreen {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: linear-gradient(135deg, #1a1a1a 0%, #2d1810 100%);
+    inset: 0;
     z-index: 100;
-}
-
-.loadingContent {
-    text-align: center;
-    color: #fff;
-}
-
-.loadingContent h1 {
-    font-size: 48px;
-    margin-bottom: 30px;
-    text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
-}
-
-.loadingBar {
-    width: 400px;
-    height: 20px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
     overflow: hidden;
-    margin: 20px auto;
-    border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
-.loadingProgress {
-    height: 100%;
-    background: linear-gradient(90deg, #ff4444 0%, #ff8844 100%);
-    transition: width 0.3s ease;
-    box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
-}
-
-/* 시작 화면 */
-.startScreen {
+/* 배경 이미지 */
+.titleBg {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
     width: 100%;
     height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    user-select: none;
+}
+
+/* 상단 그라데이션 비네트 */
+.vignetteTop {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 18%;
+    background: linear-gradient(to bottom,
+        rgba(0,0,0,0.75) 0%,
+        rgba(0,0,0,0) 100%
+    );
+    pointer-events: none;
+}
+
+/* 하단 패널 그라데이션 */
+.bottomPanel {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 36%;
+    background: linear-gradient(to top,
+        rgba(0,0,0,0.92) 0%,
+        rgba(10,5,2,0.80) 55%,
+        rgba(0,0,0,0) 100%
+    );
+    pointer-events: none;
+}
+
+/* 오버레이 컨텐츠 정렬 */
+.overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 6%;
+}
+
+/* ───────────────────────────────────────────────────────────
+   언어 선택 박스
+─────────────────────────────────────────────────────────── */
+.langBox {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+}
+
+.langTitle {
+    font-family: 'Georgia', serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: #d4b896;
+    letter-spacing: 0.12em;
+    text-shadow:
+        0 0 12px rgba(200,130,50,0.7),
+        0 2px 4px rgba(0,0,0,0.9);
+    text-transform: uppercase;
+}
+
+.langButtons {
+    display: flex;
+    gap: 20px;
+}
+
+/* ───────────────────────────────────────────────────────────
+   판타지 공용 버튼
+─────────────────────────────────────────────────────────── */
+.fantasyBtn {
+    all: unset;
+    cursor: pointer;
+    position: relative;
+    display: inline-block;
+    padding: 3px;
+
+    /* 석판 테두리 효과 */
+    background:
+        linear-gradient(135deg,
+            #8a6a3a 0%,
+            #c9a060 30%,
+            #7a4f20 60%,
+            #c9a060 100%
+        );
+    border-radius: 6px;
+    box-shadow:
+        0 6px 20px rgba(0,0,0,0.8),
+        0 0 0 1px rgba(200,150,60,0.25),
+        inset 0 1px 0 rgba(255,220,140,0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fantasyBtn:hover {
+    transform: translateY(-3px);
+    box-shadow:
+        0 10px 30px rgba(0,0,0,0.9),
+        0 0 20px rgba(200,120,30,0.45),
+        0 0 0 1px rgba(220,170,80,0.5),
+        inset 0 1px 0 rgba(255,230,160,0.4);
+}
+
+.fantasyBtn:active {
+    transform: translateY(0);
+    box-shadow:
+        0 3px 10px rgba(0,0,0,0.8),
+        inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.fantasyBtnInner {
+    display: block;
+    padding: 12px 38px;
+    background: linear-gradient(180deg, #3a1e08 0%, #1e0e02 100%);
+    border-radius: 4px;
+    border: 1px solid rgba(100,60,20,0.6);
+
+    font-family: 'Georgia', serif;
+    font-size: 17px;
+    font-weight: bold;
+    color: #e8c87a;
+    letter-spacing: 0.08em;
+    text-shadow:
+        0 0 10px rgba(220,160,50,0.8),
+        0 1px 3px rgba(0,0,0,0.9);
+    white-space: nowrap;
+}
+
+/* ───────────────────────────────────────────────────────────
+   로딩 박스
+─────────────────────────────────────────────────────────── */
+.loadBox {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: min(480px, 88vw);
+}
+
+.loadTitle {
+    font-family: 'Georgia', serif;
+    font-size: 16px;
+    font-weight: bold;
+    color: #d4b896;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(180,100,30,0.7), 0 2px 4px rgba(0,0,0,0.9);
+}
+
+.loadFile {
+    font-size: 13px;
+    color: #a08060;
+    letter-spacing: 0.05em;
+    min-height: 18px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+}
+
+.loadCount {
+    color: #786040;
+    font-size: 12px;
+}
+
+/* 프로그레스 바 */
+.progressWrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.progressOuter {
+    flex: 1;
+    height: 18px;
+    position: relative;
+    background:
+        linear-gradient(180deg, #0a0603 0%, #1a0e06 100%);
+    border-radius: 9px;
+    border: 2px solid #5a3a18;
+    box-shadow:
+        0 0 0 1px rgba(200,140,50,0.2),
+        inset 0 2px 6px rgba(0,0,0,0.7);
+    overflow: hidden;
+}
+
+.progressFill {
+    height: 100%;
+    border-radius: 7px;
+    background: linear-gradient(90deg,
+        #7a3a10 0%,
+        #c86820 40%,
+        #f0a030 80%,
+        #ffe060 100%
+    );
+    transition: width 0.25s ease;
+    box-shadow: 0 0 8px rgba(220,120,30,0.6);
+    position: relative;
+}
+
+/* 진행 끝부분 빛 효과 */
+.progressGlow {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 4px;
+    margin-left: -2px;
+    background: rgba(255,220,100,0.9);
+    filter: blur(3px);
+    pointer-events: none;
+    transition: left 0.25s ease;
+}
+
+.progressPct {
+    font-family: 'Georgia', serif;
+    font-size: 14px;
+    font-weight: bold;
+    color: #c8a050;
+    min-width: 40px;
+    text-align: right;
+    text-shadow: 0 0 8px rgba(200,130,30,0.7);
+}
+
+/* ───────────────────────────────────────────────────────────
+   게임 시작 버튼 박스
+─────────────────────────────────────────────────────────── */
+.startBox {
     display: flex;
     justify-content: center;
-    align-items: center;
-    background: linear-gradient(135deg, #1a1a1a 0%, #2d1810 100%);
-    z-index: 100;
 }
 
-.startContent {
-    text-align: center;
-    color: #fff;
-}
-
-.startContent h1 {
-    font-size: 64px;
-    margin-bottom: 10px;
-    text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
-    animation: pulse 2s ease-in-out infinite;
-}
-
-.subtitle {
-    font-size: 18px;
-    color: #aaa;
-    margin-bottom: 40px;
-}
-
-.btnStart {
-    padding: 15px 40px;
-    font-size: 24px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
-    border: none;
-    border-radius: 10px;
+/* 큰 시작 버튼 */
+.startBtn {
+    all: unset;
     cursor: pointer;
-    box-shadow: 0 5px 15px rgba(255, 68, 68, 0.4);
-    transition: all 0.3s ease;
+    position: relative;
+    display: inline-block;
+    padding: 4px;
+    background: linear-gradient(135deg,
+        #9a7040 0%,
+        #d4a060 25%,
+        #8a5a20 50%,
+        #d4a060 75%,
+        #9a7040 100%
+    );
+    border-radius: 8px;
+    box-shadow:
+        0 8px 32px rgba(0,0,0,0.9),
+        0 0 40px rgba(180,100,20,0.4),
+        0 0 0 1px rgba(220,160,60,0.3),
+        inset 0 1px 0 rgba(255,230,150,0.35);
+    animation: startPulse 2.5s ease-in-out infinite;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.btnStart:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(255, 68, 68, 0.6);
+.startBtn:hover {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow:
+        0 14px 40px rgba(0,0,0,0.9),
+        0 0 60px rgba(200,120,20,0.55),
+        0 0 0 2px rgba(240,180,80,0.5),
+        inset 0 1px 0 rgba(255,240,180,0.5);
+    animation: none;
 }
 
-.btnStart:active {
-    transform: translateY(0);
+.startBtn:active {
+    transform: translateY(0) scale(0.98);
 }
 
-/* 일시정지 화면 */
+.startBtnInner {
+    display: block;
+    padding: 18px 72px;
+    background: linear-gradient(180deg, #2e1404 0%, #180a02 100%);
+    border-radius: 5px;
+    border: 1px solid rgba(80,45,15,0.5);
+
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 26px;
+    font-weight: bold;
+    color: #f0c060;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-shadow:
+        0 0 20px rgba(240,170,50,0.9),
+        0 0 8px rgba(200,120,20,0.8),
+        0 2px 4px rgba(0,0,0,0.9);
+    white-space: nowrap;
+}
+
+@keyframes startPulse {
+    0%, 100% {
+        box-shadow:
+            0 8px 32px rgba(0,0,0,0.9),
+            0 0 30px rgba(160,90,15,0.3),
+            0 0 0 1px rgba(200,140,50,0.25);
+    }
+    50% {
+        box-shadow:
+            0 8px 32px rgba(0,0,0,0.9),
+            0 0 50px rgba(200,120,20,0.5),
+            0 0 0 1px rgba(240,180,80,0.45);
+    }
+}
+
+/* ───────────────────────────────────────────────────────────
+   일시정지
+─────────────────────────────────────────────────────────── */
 .pauseScreen {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
+    z-index: 200;
     display: flex;
-    justify-content: center;
     align-items: center;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 100;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
 }
 
-.pauseContent {
-    text-align: center;
-    color: #fff;
+.pauseBox {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+    padding: 48px 64px;
+    background:
+        linear-gradient(180deg, rgba(20,10,4,0.97) 0%, rgba(10,5,2,0.97) 100%);
+    border: 2px solid rgba(160,100,30,0.5);
+    border-radius: 12px;
+    box-shadow:
+        0 20px 60px rgba(0,0,0,0.9),
+        0 0 40px rgba(120,70,20,0.25),
+        inset 0 1px 0 rgba(200,150,60,0.2);
 }
 
-.pauseContent h2 {
-    font-size: 48px;
-    margin-bottom: 30px;
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-}
-
-.btnResume {
-    padding: 12px 30px;
-    font-size: 20px;
+.pauseTitle {
+    font-family: 'Georgia', serif;
+    font-size: 42px;
     font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #4444ff 0%, #0000cc 100%);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    box-shadow: 0 5px 15px rgba(68, 68, 255, 0.4);
-    transition: all 0.3s ease;
-}
-
-.btnResume:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(68, 68, 255, 0.6);
-}
-
-@keyframes pulse {
-
-    0%,
-    100% {
-        transform: scale(1);
-    }
-
-    50% {
-        transform: scale(1.05);
-    }
+    color: #e8c878;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    text-shadow:
+        0 0 20px rgba(220,160,40,0.7),
+        0 2px 4px rgba(0,0,0,0.9);
+    margin: 0;
 }

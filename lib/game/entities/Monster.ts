@@ -48,7 +48,7 @@ export class Monster {
         this.velocity = new Vector2(0, 0)
 
         // HP 설정
-        this.stats = config.stats || { Vigor: 5, Spirit: 5, Might: 5, Agility: 5, Perception: 5 }
+        this.stats = config.stats || { Vigor: 5, Spirit: 5, Might: 5, Agility: 5, Luck: 5 }
         const vigorHp = this.stats.Vigor * 20
         this.maxHp = config.hp || vigorHp || 100
         this.hp = this.maxHp
@@ -511,13 +511,14 @@ export class Monster {
 
             // Text
             ctx.fillStyle = 'white'
-            ctx.font = '10px Arial'
+            ctx.font = 'bold 11px monospace'
             ctx.textAlign = 'center'
-            ctx.shadowColor = "rgba(0, 0, 0, 0.8)"
+            ctx.textBaseline = 'alphabetic'
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
             ctx.shadowBlur = 4
             ctx.shadowOffsetX = 2
             ctx.shadowOffsetY = 2
-            ctx.fillText(`${Math.ceil(this.hp)}/${this.maxHp}`, 0, yOffset - 5)
+            ctx.fillText(`${Math.ceil(this.hp)} / ${this.maxHp}`, 0, yOffset - 5)
 
             ctx.restore()
         }

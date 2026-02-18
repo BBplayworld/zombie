@@ -57,7 +57,7 @@ export interface InventoryUIConfig {
 
 export const inventoryConfig: InventoryUIConfig = {
     position: {
-        anchor: 'top-right',
+        anchor: 'top-left',
         x: -100,
         y: 20
     },

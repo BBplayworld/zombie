@@ -6,7 +6,7 @@ export class ResourceLoader {
     private images: Map<string, HTMLImageElement> = new Map()
     private loadedCount: number = 0
     private totalCount: number = 0
-    private onProgressCallback?: (progress: number) => void
+    private onProgressCallback?: (progress: number, key: string) => void
     private onCompleteCallback?: () => void
 
     /**
@@ -25,7 +25,7 @@ export class ResourceLoader {
     }
 
     private loadImage(key: string, path: string): Promise<void> {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             const img = new Image()
             img.crossOrigin = 'anonymous'
 
@@ -33,16 +33,15 @@ export class ResourceLoader {
                 this.images.set(key, img)
                 this.loadedCount++
                 const progress = (this.loadedCount / this.totalCount) * 100
-                this.onProgressCallback?.(progress)
+                this.onProgressCallback?.(progress, key)
                 resolve()
             }
 
             img.onerror = () => {
                 console.error(`Failed to load image: ${path}`)
-                // 로드 실패해도 진행
                 this.loadedCount++
                 const progress = (this.loadedCount / this.totalCount) * 100
-                this.onProgressCallback?.(progress)
+                this.onProgressCallback?.(progress, key)
                 resolve()
             }
 
@@ -58,9 +57,12 @@ export class ResourceLoader {
         return this.images
     }
 
-    onProgress(callback: (progress: number) => void): void {
+    onProgress(callback: (progress: number, key: string) => void): void {
         this.onProgressCallback = callback
     }
+
+    getTotalCount(): number { return this.totalCount }
+    getLoadedCount(): number { return this.loadedCount }
 
     onComplete(callback: () => void): void {
         this.onCompleteCallback = callback

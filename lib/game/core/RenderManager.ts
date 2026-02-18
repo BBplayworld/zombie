@@ -5,20 +5,18 @@ import { ItemDrop } from '../entities/ItemDrop'
 import { TileMap } from '../systems/TileMap'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { InventoryManager } from './InventoryManager'
-import { inventoryConfig } from '../config/Inventory'
-import { ItemType } from '../config/types'
+import { MiniMap } from '../systems/MiniMap'
 import { t } from '../config/Locale'
 
 /**
  * 렌더링 관리 클래스
- * 게임 화면 렌더링 로직을 담당
  */
 export class RenderManager {
     private canvas: HTMLCanvasElement
     private ctx: CanvasRenderingContext2D
     private resourceLoader: ResourceLoader
+    private miniMap: MiniMap
 
-    // FPS 추적
     private fps: number = 0
     private frameCount: number = 0
     private fpsUpdateTime: number = 0
@@ -29,11 +27,13 @@ export class RenderManager {
         if (!ctx) throw new Error('Failed to get 2D context')
         this.ctx = ctx
         this.resourceLoader = resourceLoader
+        this.miniMap = new MiniMap(canvas)
     }
 
-    /**
-     * FPS 계산 업데이트
-     */
+    getMiniMap(): MiniMap {
+        return this.miniMap
+    }
+
     updateFPS(currentTime: number): void {
         this.frameCount++
         if (currentTime - this.fpsUpdateTime >= 1000) {
@@ -43,9 +43,6 @@ export class RenderManager {
         }
     }
 
-    /**
-     * 게임 전체 렌더링
-     */
     render(
         tileMap: TileMap,
         camera: Camera,
@@ -53,50 +50,39 @@ export class RenderManager {
         monsters: Monster[],
         items: ItemDrop[],
         gameState: string,
-        inventoryManager: InventoryManager // Added argument
+        inventoryManager: InventoryManager
     ): void {
         this.clearScreen()
         this.ctx.save()
 
-        // 1. 타일맵 렌더링
+        // 1. 타일맵
         tileMap.render(this.ctx, camera)
 
-        // 2. 엔티티 렌더링 (Y축 정렬)
+        // 2. 엔티티 (Y축 정렬)
         this.renderEntities(player, monsters, items, camera)
 
         this.ctx.restore()
 
-        // 3. UI 렌더링
-        this.renderUI(player, camera, gameState, inventoryManager)
+        // 3. UI (인벤토리 → 미니맵 → HUD 순)
+        this.renderUI(player, camera, gameState, inventoryManager, monsters)
     }
 
-    /**
-     * 화면 클리어
-     */
     private clearScreen(): void {
         this.ctx.fillStyle = '#111'
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
     }
 
-    /**
-     * 엔티티 렌더링 (플레이어 + 몬스터 + 아이템)
-     */
     private renderEntities(player: Player, monsters: Monster[], items: ItemDrop[], camera: Camera): void {
         const entities: (Player | Monster | ItemDrop)[] = [...items, player, ...monsters]
         entities.sort((a, b) => a.position.y - b.position.y)
 
-        // Player image handling usually inside entity.render or pre-fetched.
-        // RenderManager previously fetched images here.
-        // It's efficient to fetch once.
         const playerImage = this.resourceLoader.getImage('player')
-        const monsterImage = this.resourceLoader.getImage('monster')
 
         entities.forEach(entity => {
             if (entity instanceof Player) {
                 const screenPos = camera.worldToScreen(entity.position.x, entity.position.y)
                 entity.render(this.ctx, playerImage, screenPos.x, screenPos.y)
             } else if (entity instanceof Monster) {
-                if (monsterImage) entity.setSpriteImage(monsterImage)
                 entity.render(this.ctx, camera)
             } else if (entity instanceof ItemDrop) {
                 entity.render(this.ctx, camera, this.resourceLoader)
@@ -104,29 +90,35 @@ export class RenderManager {
         })
     }
 
-    /**
-     * UI 렌더링
-     */
-    private renderUI(player: Player, camera: Camera, gameState: string, inventoryManager: InventoryManager): void {
-        this.renderDebugInfo(player, camera, gameState)
-        this.renderControls()
-
+    private renderUI(
+        player: Player,
+        camera: Camera,
+        gameState: string,
+        inventoryManager: InventoryManager,
+        monsters: Monster[]
+    ): void {
         if (player.isInventoryOpen) {
             inventoryManager.render(this.ctx, this.resourceLoader)
         }
+
+        // 미니맵 (인벤토리 위에도 표시)
+        this.miniMap.render(this.ctx, player.position, monsters)
+
+        // HUD는 항상 최상단
+        this.renderDebugInfo(player, camera, gameState)
+        this.renderControls()
     }
 
-    /**
-     * 디버그 정보 렌더링
-     */
     private renderDebugInfo(player: Player, camera: Camera, gameState: string): void {
         this.ctx.save()
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-        this.ctx.fillRect(10, 10, 200, 120)
+        this.ctx.textAlign = 'left'
+        this.ctx.textBaseline = 'alphabetic'
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
+        this.ctx.fillRect(10, 10, 220, 120)
 
         this.applyTextShadow(this.ctx)
         this.ctx.fillStyle = '#fff'
-        this.ctx.font = '14px monospace'
+        this.ctx.font = '13px monospace'
         this.ctx.fillText(`FPS: ${this.fps}`, 20, 30)
         this.ctx.fillText(`Player: (${Math.floor(player.position.x)}, ${Math.floor(player.position.y)})`, 20, 50)
         this.ctx.fillText(`Camera: (${Math.floor(camera.position.x)}, ${Math.floor(camera.position.y)})`, 20, 70)
@@ -135,26 +127,25 @@ export class RenderManager {
         this.ctx.restore()
     }
 
-    /**
-     * 조작법 렌더링
-     */
     private renderControls(): void {
         this.ctx.save()
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-        this.ctx.fillRect(10, this.canvas.height - 80, 250, 70)
+        this.ctx.textAlign = 'left'
+        this.ctx.textBaseline = 'alphabetic'
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
+        this.ctx.fillRect(10, this.canvas.height - 80, 260, 70)
 
         this.applyTextShadow(this.ctx)
         this.ctx.fillStyle = '#fff'
-        this.ctx.font = 'bold 16px sans-serif'
-        this.ctx.fillText(t('inventory.controls.title'), 20, this.canvas.height - 55)
-        this.ctx.font = '14px sans-serif'
-        this.ctx.fillText(t('inventory.controls.move'), 20, this.canvas.height - 35)
-        this.ctx.fillText(t('inventory.controls.pause'), 20, this.canvas.height - 15)
+        this.ctx.font = 'bold 14px monospace'
+        this.ctx.fillText(t('inventory.controls.title'), 20, this.canvas.height - 57)
+        this.ctx.font = '13px monospace'
+        this.ctx.fillText(t('inventory.controls.move'), 20, this.canvas.height - 38)
+        this.ctx.fillText(t('inventory.controls.pause'), 20, this.canvas.height - 18)
         this.ctx.restore()
     }
 
     private applyTextShadow(ctx: CanvasRenderingContext2D): void {
-        ctx.shadowColor = "rgba(0, 0, 0, 0.8)"
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
         ctx.shadowBlur = 4
         ctx.shadowOffsetX = 2
         ctx.shadowOffsetY = 2

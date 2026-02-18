@@ -165,6 +165,20 @@ export class GameEngine {
       )
     }
 
+    // 미니맵에 폴리곤 + 월드 경계 + 맵 이미지 전달
+    const miniMap = this.renderManager.getMiniMap()
+    const polygon = this.tileMap.getMapPolygon()
+    const bounds  = this.tileMap.getWalkableBounds()
+    if (polygon.length > 0) miniMap.setMapPolygon(polygon)
+    if (bounds) miniMap.setWorldBounds(bounds)
+
+    // 실제 맵 이미지(mapBackground)를 미니맵에 설정
+    const mapImg = this.resourceLoader.getImage('mapBackground')
+    const worldSize = chapterConfig.openWorldMapConfig?.worldSize
+    if (mapImg && worldSize) {
+      miniMap.setMapImage(mapImg, worldSize.width, worldSize.height)
+    }
+
     console.log('  ✅ [STEP 2-2] Map data loaded')
   }
 
@@ -347,17 +361,31 @@ export class GameEngine {
   }
 
   /**
-   * 줌 방지 설정
+   * 줌 방지 설정 + 미니맵 이벤트 등록
    */
   private setupZoomPrevention(): void {
     window.addEventListener('wheel', (e) => {
-      if (e.ctrlKey) e.preventDefault()
+      if (e.ctrlKey) { e.preventDefault(); return }
+      // 미니맵 휠 줌
+      this.renderManager?.getMiniMap()?.handleWheel(e)
     }, { passive: false })
 
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
         e.preventDefault()
       }
+    })
+
+    this.canvas.addEventListener('mousedown', (e) => {
+      this.renderManager?.getMiniMap()?.handleMouseDown(e)
+    })
+
+    window.addEventListener('mousemove', (e) => {
+      this.renderManager?.getMiniMap()?.handleMouseMove(e)
+    })
+
+    window.addEventListener('mouseup', () => {
+      this.renderManager?.getMiniMap()?.handleMouseUp()
     })
   }
 

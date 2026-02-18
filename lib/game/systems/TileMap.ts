@@ -105,6 +105,16 @@ export class TileMap {
     this.mapHeight = height
   }
 
+  /** 미니맵용 폴리곤 데이터 반환 */
+  getMapPolygon(): { x: number, y: number }[] {
+    return this.mapData
+  }
+
+  /** 미니맵용 월드 경계 반환 */
+  getWalkableBounds(): { minX: number, maxX: number, minY: number, maxY: number } | null {
+    return this.CONFIG.walkableArea || this.CONFIG.mapBoundary || null
+  }
+
   /**
    * 특정 그리드 위치가 이동 가능한지 확인
    * @deprecated Polygon collision does not use grid.
@@ -224,31 +234,7 @@ export class TileMap {
 
       // 1. 이동 가능 영역 그림자 처리 (Point #1)
       const area = this.CONFIG.walkableArea || this.CONFIG.mapBoundary
-      if (area) {
-        const wx = screenPos.x + area.minX
-        const wy = screenPos.y + area.minY
-        const ww = area.maxX - area.minX
-        const wh = area.maxY - area.minY
-
-        ctx.save()
-        // 비이동 영역(바깥쪽) 어둡게 처리
-        ctx.beginPath()
-        // 전체 맵 범위 (넉넉하게)
-        ctx.rect(drawX - 500, drawY - 500, mapWidth + 1000, mapHeight + 1000)
-        // 이동 가능 영역 (반 시계 방향 또는 evenodd로 구멍 뚫기)
-        ctx.rect(wx, wy, ww, wh)
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
-        ctx.fill('evenodd')
-
-        // 경계선 부드러운 그림자 효과
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)'
-        ctx.shadowBlur = 60
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'
-        ctx.lineWidth = 5
-        ctx.strokeRect(wx, wy, ww, wh)
-        ctx.restore()
-      }
+      // 그림자 없음 - 순수 맵 이미지만 렌더링
     }
   }
 }
