@@ -3,20 +3,34 @@
 import { useEffect, useRef, useState } from 'react'
 import { GameEngine } from '@/lib/game/core/GameEngine'
 import styles from './GameCanvas.module.css'
-import { t, setLanguage } from '@/lib/game/config/Locale'
+import { t, setLanguage, currentLang } from '@/lib/game/config/Locale'
 
-type GameState = 'lang_select' | 'loading' | 'ready' | 'playing' | 'paused' | 'gameover'
+type GameState = 'loading' | 'ready' | 'playing' | 'paused' | 'gameover'
 
 const ASSET_LABELS: Record<string, string> = {
     mapBackground: '월드 맵',
+    mapTile1: '맵 타일 1',
+    mapTile2: '맵 타일 2',
+    mapTile3: '맵 타일 3',
+    mapTile4: '맵 타일 4',
+    mapTile5: '맵 타일 5',
+    mapTile6: '맵 타일 6',
+    mapTile7: '맵 타일 7',
+    mapTile8: '맵 타일 8',
+    mapTile9: '맵 타일 9',
+    mapTile10: '맵 타일 10',
+    mapTile11: '맵 타일 11',
+    mapTile12: '맵 타일 12',
+    mapTile13: '맵 타일 13',
+    mapTile14: '맵 타일 14',
+    mapTile15: '맵 타일 15',
+    mapTile16: '맵 타일 16',
     player: '플레이어',
     fight: '전투 스프라이트',
     helmet: '아이템: 투구',
     armor: '아이템: 갑옷',
     weapon: '아이템: 무기',
     window: 'UI 윈도우',
-    baseTile: '기본 타일',
-    backgroundTile: '배경 타일',
     mon_1: '몬스터: Walker',
     mon_2: '몬스터: Runner',
     mon_3: '몬스터: Tank',
@@ -29,15 +43,16 @@ export default function GameCanvas() {
     const gameEngineRef = useRef<GameEngine | null>(null)
     const engineInitRef = useRef(false) // 엔진 초기화 중복 방지
 
-    const [gameState, setGameState] = useState<GameState>('lang_select')
+    const [gameState, setGameState] = useState<GameState>('loading')
     const [loadingProgress, setLoadingProgress] = useState(0)
     const [loadingKey, setLoadingKey] = useState('')
     const [loadedCount, setLoadedCount] = useState(0)
     const [totalCount, setTotalCount] = useState(0)
+    const [selectedLang, setSelectedLang] = useState<'ko' | 'en'>(currentLang)
 
     const handleLanguageSelect = (lang: 'ko' | 'en') => {
         setLanguage(lang)
-        setGameState('loading')
+        setSelectedLang(lang)
     }
 
     /* ── 캔버스 리사이즈 + ESC 키 (마운트~언마운트 전체) ── */
@@ -75,7 +90,7 @@ export default function GameCanvas() {
         }
     }, []) // 마운트 1회만
 
-    /* ── 게임 엔진 초기화 (lang_select → loading 전환 시 1회) ── */
+    /* ── 게임 엔진 초기화 (마운트 시 loading → 1회) ── */
     useEffect(() => {
         if (gameState !== 'loading') return
         if (engineInitRef.current) return // 이미 초기화 중이면 스킵
@@ -135,7 +150,13 @@ export default function GameCanvas() {
         setGameState('playing')
     }
 
-    const isPreGame = ['lang_select', 'loading', 'ready'].includes(gameState)
+    const goToTitle = () => {
+        gameEngineRef.current?.pause()
+        gameEngineRef.current?.resetToTitle()
+        setGameState('ready')
+    }
+
+    const isPreGame = ['loading', 'ready'].includes(gameState)
 
     return (
         <div className={styles.gameWrapper}>
@@ -143,61 +164,63 @@ export default function GameCanvas() {
             {/* ── 게임 전 화면 (배경 이미지 공유) ── */}
             {isPreGame && (
                 <div className={styles.titleScreen}>
-                    <img
-                        src="/assets/main/start.png"
-                        alt="title background"
-                        className={styles.titleBg}
-                        draggable={false}
-                    />
-                    <div className={styles.vignetteTop} />
-                    <div className={styles.bottomPanel} />
-
-                    {/* 언어 선택 */}
-                    {gameState === 'lang_select' && (
-                        <div className={styles.overlay}>
-                            <div className={styles.langBox}>
-                                <p className={styles.langTitle}>Select Language / 언어 선택</p>
-                                <div className={styles.langButtons}>
-                                    <button className={styles.fantasyBtn} onClick={() => handleLanguageSelect('en')}>
-                                        <span className={styles.fantasyBtnInner}>English</span>
-                                    </button>
-                                    <button className={styles.fantasyBtn} onClick={() => handleLanguageSelect('ko')}>
-                                        <span className={styles.fantasyBtnInner}>한국어</span>
-                                    </button>
-                                </div>
-                            </div>
+                    {/* 게임 시작 이미지 1184px 가로에 맞춘 영역 + 양쪽 그림자 */}
+                    <div className={styles.startImageBox}>
+                        <div className={styles.titleBg}>
+                            <div className={styles.vignetteTop} />
+                            <img
+                                src="/assets/main/start.png"
+                                alt="title background"
+                                draggable={false}
+                            />
+                            <div className={styles.bottomPanel} />
                         </div>
-                    )}
+                        <div className={styles.vignetteLeftStart} aria-hidden />
+                        <div className={styles.vignetteRightStart} aria-hidden />
+                    </div>
 
-                    {/* 리소스 로딩 */}
+                    {/* 1. 리소스 로딩 */}
                     {gameState === 'loading' && (
                         <div className={styles.overlay}>
                             <div className={styles.loadBox}>
-                                <p className={styles.loadTitle}>리소스 다운로드 중...</p>
-                                <p className={styles.loadFile}>
+                                <p className={styles.loadLine}>리소스 다운로드 중</p>
+                                <p className={styles.loadLine}>
                                     {ASSET_LABELS[loadingKey] ?? loadingKey}
                                     {totalCount > 0 && (
-                                        <span className={styles.loadCount}>&nbsp;({loadedCount} / {totalCount})</span>
+                                        <span className={styles.loadLineCount}> · {loadedCount} / {totalCount}</span>
                                     )}
                                 </p>
-                                <div className={styles.progressWrap}>
-                                    <div className={styles.progressOuter}>
-                                        <div
-                                            className={styles.progressFill}
-                                            style={{ width: `${loadingProgress}%` }}
-                                        />
-                                        <div className={styles.progressGlow} style={{ left: `${loadingProgress}%` }} />
-                                    </div>
-                                    <span className={styles.progressPct}>{loadingProgress.toFixed(0)}%</span>
-                                </div>
+                                <p className={styles.loadLineThin}>
+                                    {loadingProgress.toFixed(0)}%
+                                    {totalCount > 0 && (
+                                        <span className={styles.loadLineBar}>
+                                            <span className={styles.loadLineBarFill} style={{ width: `${loadingProgress}%` }} />
+                                        </span>
+                                    )}
+                                </p>
                             </div>
                         </div>
                     )}
 
-                    {/* 게임 시작 버튼 */}
+                    {/* 2. 언어 선택 + 게임 시작 (동일 화면, 흰색 텍스트) */}
                     {gameState === 'ready' && (
                         <div className={styles.overlay}>
-                            <div className={styles.startBox}>
+                            <div className={styles.readyBox}>
+                                <div className={styles.langRow}>
+                                    <button
+                                        className={`${styles.langTextBtn} ${selectedLang === 'en' ? styles.langTextBtnActive : ''}`}
+                                        onClick={() => handleLanguageSelect('en')}
+                                    >
+                                        English
+                                    </button>
+                                    <span className={styles.langSeparator}>|</span>
+                                    <button
+                                        className={`${styles.langTextBtn} ${selectedLang === 'ko' ? styles.langTextBtnActive : ''}`}
+                                        onClick={() => handleLanguageSelect('ko')}
+                                    >
+                                        한국어
+                                    </button>
+                                </div>
                                 <button className={styles.startBtn} onClick={startGame}>
                                     <span className={styles.startBtnInner}>{t('game.start')}</span>
                                 </button>
@@ -212,18 +235,26 @@ export default function GameCanvas() {
                 <div className={styles.pauseScreen}>
                     <div className={styles.pauseBox}>
                         <h2 className={styles.pauseTitle}>{t('game.paused')}</h2>
-                        <button className={styles.fantasyBtn} onClick={resumeGame}>
-                            <span className={styles.fantasyBtnInner}>{t('game.resume')}</span>
-                        </button>
+                        <div className={styles.pauseButtons}>
+                            <button className={styles.pauseBtn} onClick={resumeGame}>
+                                <span className={styles.pauseBtnInner}>{t('game.resume')}</span>
+                            </button>
+                            <button className={styles.pauseBtn} onClick={goToTitle}>
+                                <span className={styles.pauseBtnInner}>{t('game.backToTitle')}</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
 
-            {/* 게임 캔버스 (항상 DOM에 존재해야 함) */}
+            {/* 게임 캔버스 (항상 DOM에 존재, 시작 전에는 숨김) */}
             <canvas
                 ref={canvasRef}
-                className={`${styles.gameCanvas} ${gameState === 'paused' ? styles.blur : ''}`}
+                className={`${styles.gameCanvas} ${isPreGame ? styles.gameCanvasHidden : ''} ${gameState === 'paused' ? styles.blur : ''}`}
             />
+            {/* 2048px 영역 양쪽 자연스러운 그림자 (캔버스 위 오버레이) */}
+            <div className={styles.vignetteLeft} aria-hidden />
+            <div className={styles.vignetteRight} aria-hidden />
         </div>
     )
 }

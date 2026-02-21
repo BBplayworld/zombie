@@ -39,6 +39,9 @@ export class Monster {
 
     private lastValidPosition: Vector2
 
+    /** 쿼터뷰: 목표 지점으로 보간 이동 (MoveTowards) */
+    private static readonly ARRIVAL_DISTANCE = 3
+
     constructor(id: string, x: number, y: number, config: MonsterDetailConfig) {
         this.id = id
         this.position = new Vector2(x, y)
@@ -56,8 +59,8 @@ export class Monster {
         this.config = config
 
         // 몬스터 크기는 플레이어보다 약간 작거나 같게 설정
-        this.width = 150
-        this.height = 150
+        this.width = 110
+        this.height = 110
         this.speed = config.moveSpeed
         this.angle = 0
 
@@ -145,93 +148,70 @@ export class Monster {
             const dy = this.moveTarget.y - this.position.y
             const dist = Math.sqrt(dx * dx + dy * dy)
 
-            // 2. 도착 체크
-            if (dist < 5) {
-                // 도착 완료
+            // 도착 시 목표로 스냅 & 다음 AI 판단
+            if (dist <= Monster.ARRIVAL_DISTANCE) {
                 this.position.x = this.moveTarget.x
                 this.position.y = this.moveTarget.y
+                this.moveTarget = null
                 this.velocity.x = 0
                 this.velocity.y = 0
-                this.isMoving = false
-                this.stateTimer = 0 // AI가 즉시 다음 행동 결정하도록 (Wait or Return)
+                this.stateTimer = 0
             } else {
-                // 3. 이동 처리
-                if (this.speed > 0) {
+                const moveBy = Math.min(this.speed * deltaTime * 60, dist)
+                if (moveBy > 0) {
                     this.velocity.x = (dx / dist) * this.speed
                     this.velocity.y = (dy / dist) * this.speed
+                    this.updateDirection(this.velocity.x, this.velocity.y)
+                    this.position.x += (dx / dist) * moveBy
+                    this.position.y += (dy / dist) * moveBy
                 }
-
-                // 4. 플레이어 충돌 회피 (Repulsion)
-                // Need access to player position. Currently Monster doesn't know about Player explicitly?
-                // MonsterManager passes player position to update? No.
-                // We might need to handle this in MonsterManager or pass player to update?
-                // But `update` signature is fixed. 
-                // Let's defer strict collision to MonsterManager or assumes simple overlapping check?
-                // Wait, user asked to handle it here. 
-                // We don't have player reference here.
-                // We'll skip this part for now and implement it in MonsterManager.updateAll or similar, 
-                // OR just inject player into Update if possible. 
-                // Actually `GameEngine` calls `monsterManager.updateAll(dt)`. 
-                // We can modify `updateAll` to pass player.
-                // For now, let's stick to movement logic first.
-
-                this.updateDirection(this.velocity.x, this.velocity.y)
-
-                const timeScale = deltaTime * 60
-                const moveX = this.velocity.x * timeScale
-                const moveY = this.velocity.y * timeScale
-
                 const config = getChapterConfig(1)
-                const allowance = 0
-                const offset = config.gameplayConfig.collisionYOffset
-
-                let nextX = this.position.x + moveX
-                let nextY = this.position.y + moveY
-
-                // X축 이동 & 충돌 체크
-                if (this.tileMap?.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
-                    this.position.x = nextX
-                } else {
-                    this.velocity.x = 0 // Blocked
-                }
-
-                // Y축 이동 & 충돌 체크
-                if (this.tileMap?.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
-                    this.position.y = nextY
-                } else {
-                    this.velocity.y = 0 // Blocked
-                }
-
-                // 3. 맵 경계 강제 적용
                 const walkableArea = config.openWorldMapConfig.walkableArea
                 if (walkableArea) {
                     const BOUNDARY_MARGIN = 50
-                    // Feet offset might be needed for boundary too? 
-                    // Usually boundary rect covers the whole "walkable ground".
-                    // Assuming position.y is sufficient or we should clamp feet? 
-                    // Let's stick to simple clamp for now but ensure we don't clamp into void.
-
                     if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) this.position.x = walkableArea.minX + BOUNDARY_MARGIN
                     if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
                     if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) this.position.y = walkableArea.minY + BOUNDARY_MARGIN
                     if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
                 }
 
-                // 4. Stuck Check
-                // If velocity was expected but we didn't move effectively?
-                // Or simplified: If collision zeroed our velocity
-                if (this.velocity.x === 0 && this.velocity.y === 0) {
-                    // Blocked
-                    this.stateTimer = 0
-                    this.isMoving = false
-                    this.state = 'idle' // Force idle
-                }
+            }
+        } else if (this.velocity.x !== 0 || this.velocity.y !== 0) {
+            const cfg = getChapterConfig(1)
+            const off = cfg.gameplayConfig.collisionYOffset
+            const timeScale = deltaTime * 60
+            const nextX = this.position.x + this.velocity.x * timeScale
+            const nextY = this.position.y + this.velocity.y * timeScale
+            if (this.tileMap?.isWalkableAtWorld(nextX, this.position.y + off, 0)) this.position.x = nextX
+            else this.velocity.x = 0
+            if (this.tileMap?.isWalkableAtWorld(this.position.x, nextY + off, 0)) this.position.y = nextY
+            else this.velocity.y = 0
+            const wa = cfg.openWorldMapConfig.walkableArea
+            if (wa) {
+                const M = 50
+                if (this.position.x < wa.minX + M) this.position.x = wa.minX + M
+                if (this.position.x > wa.maxX - M) this.position.x = wa.maxX - M
+                if (this.position.y < wa.minY + M) this.position.y = wa.minY + M
+                if (this.position.y > wa.maxY - M) this.position.y = wa.maxY - M
             }
         }
 
-        // Update Last Valid Position (Success)
-        this.lastValidPosition.x = this.position.x
-        this.lastValidPosition.y = this.position.y
+        if (this.velocity.x === 0 && this.velocity.y === 0 && !this.moveTarget) {
+            this.stateTimer = 0
+            this.isMoving = false
+            this.state = 'idle'
+        }
+
+        // 5. 이동 가능 영역 이탈 방지: 어디서든 이동가능 영역 밖이면 마지막 유효 위치로 복귀
+        const config = getChapterConfig(1)
+        const offset = config.gameplayConfig?.collisionYOffset ?? 80
+        if (this.tileMap && !this.tileMap.isWalkableAtWorld(this.position.x, this.position.y + offset, 0)) {
+            this.position.x = this.lastValidPosition.x
+            this.position.y = this.lastValidPosition.y
+        } else {
+            this.lastValidPosition.x = this.position.x
+            this.lastValidPosition.y = this.position.y
+        }
 
         // 애니메이션 업데이트
         if (this.isMoving) {
@@ -431,12 +411,12 @@ export class Monster {
     render(ctx: CanvasRenderingContext2D, camera: any): void {
         if (this.isDead) return
 
-        // 화면 좌표 계산 (Camera.worldToScreen과 동일하게)
-        const screenX = this.position.x - camera.position.x
-        const screenY = this.position.y - camera.position.y
+        // 화면 좌표: 반드시 camera.worldToScreen 사용 (scale 반영, 플레이어 움직임과 무관)
+        const screenPos = camera.worldToScreen(this.position.x, this.position.y)
+        const screenX = screenPos.x
+        const screenY = screenPos.y
 
         // 화면 밖이면 렌더링 스킵 (최적화)
-        // 넉넉하게 200px 여유
         if (screenX < -200 || screenX > ctx.canvas.width + 200 ||
             screenY < -200 || screenY > ctx.canvas.height + 200) {
             return

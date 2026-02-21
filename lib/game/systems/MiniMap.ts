@@ -4,31 +4,29 @@ import { Vector2 } from '../utils/math'
 interface MapRect { x: number; y: number; w: number; h: number }
 
 /**
- * 미니맵 시스템
- * - 실제 맵 이미지(map-1_3072.png) 축소판을 배경으로 렌더링
- * - 이동 가능 폴리곤 영역만 표시, 외부는 짙은 어두운 마스크 처리
- * - 마우스 휠 줌 / 드래그 지원
+ * 미니맵 시스템 (단일 맵 이미지 기반)
+ * - 한 장의 맵 이미지를 축소해 배경으로 표시
+ * - 이동 가능 폴리곤 영역만 보이고, 외부는 어두운 마스크
+ * - 휠 줌 / 드래그 지원
  */
 export class MiniMap {
     private canvas: HTMLCanvasElement
 
-    // 표시 설정
-    private readonly SIZE    = 210
-    private readonly MARGIN  = 15
+    private readonly SIZE = 210
+    private readonly MARGIN = 15
     private readonly CORNER_R = 8
     private readonly MIN_ZOOM = 0.3
     private readonly MAX_ZOOM = 6.0
 
-    // 맵 데이터
-    private polygon: { x: number; y: number }[] = []
+    private polygons: { x: number; y: number }[][] = []
     private worldBounds: { minX: number; maxX: number; minY: number; maxY: number } = {
         minX: -1400, maxX: 1400, minY: -1400, maxY: 1400
     }
 
-    // 실제 맵 이미지 (worldSize 기준 중심 배치)
+    /** 단일 맵 이미지 (전체 월드 1장) */
     private mapImage: HTMLImageElement | null = null
-    private mapHalfW: number = 1536  // worldSize.width  / 2
-    private mapHalfH: number = 1536  // worldSize.height / 2
+    private mapHalfW: number = 1024
+    private mapHalfH: number = 1024
 
     // 뷰 상태
     private zoom: number = 1.0
@@ -39,12 +37,25 @@ export class MiniMap {
     private dragStartMouse: { x: number; y: number } = { x: 0, y: 0 }
     private dragStartCenter: { x: number; y: number } = { x: 0, y: 0 }
 
+    // 로케일 (미니맵 텍스트)
+    private locale: 'ko' | 'en' = 'en'
+    private static readonly LOCALE_TEXTS: Record<'ko' | 'en', { title: string; hint: string }> = {
+        ko: { title: '미니맵', hint: '휠: 확대/축소  드래그: 이동' },
+        en: { title: 'MINIMAP', hint: 'scroll: zoom  drag: pan' },
+    }
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas
     }
 
-    setMapPolygon(polygon: { x: number; y: number }[]): void {
-        this.polygon = polygon
+    setLocale(locale: 'ko' | 'en'): void {
+        this.locale = locale
+    }
+
+    setMapPolygon(polygon: { x: number; y: number }[] | { x: number; y: number }[][]): void {
+        const first = polygon[0]
+        const isMulti = Array.isArray(first) && first.length > 0 && typeof (first as { x?: number }[])[0] === 'object'
+        this.polygons = isMulti ? (polygon as { x: number; y: number }[][]) : [polygon as { x: number; y: number }[]]
     }
 
     setWorldBounds(bounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
@@ -55,15 +66,10 @@ export class MiniMap {
         }
     }
 
-    /**
-     * 실제 맵 이미지 설정
-     * @param img  로드된 mapBackground 이미지
-     * @param worldWidth  worldSize.width  (이미지가 커버하는 월드 너비)
-     * @param worldHeight worldSize.height
-     */
+    /** 단일 맵 이미지 설정 (월드 크기 = 이미지가 커버하는 범위) */
     setMapImage(img: HTMLImageElement, worldWidth: number, worldHeight: number): void {
         this.mapImage = img
-        this.mapHalfW = worldWidth  / 2
+        this.mapHalfW = worldWidth / 2
         this.mapHalfH = worldHeight / 2
     }
 
@@ -134,7 +140,7 @@ export class MiniMap {
         if (!this.isHit(sx, sy)) return false
 
         this.isDragging = true
-        this.dragStartMouse  = { x: sx, y: sy }
+        this.dragStartMouse = { x: sx, y: sy }
         this.dragStartCenter = { ...this.viewCenter }
         return true
     }
@@ -173,55 +179,41 @@ export class MiniMap {
         ctx.fillStyle = 'rgba(6, 8, 6, 0.96)'
         ctx.fillRect(r.x, r.y, r.w, r.h)
 
-        // ── 3. 이동 가능 폴리곤 내부: 실제 맵 이미지 표시 ──
-        if (this.polygon.length >= 3) {
-            ctx.save()
+        // ── 3. 이동 가능 폴리곤 내부: 단일 맵 이미지 표시 ──
+        const hasPolygons = this.polygons.some(p => p.length >= 3)
+        const hasMapImg = this.mapImage?.complete && (this.mapImage?.naturalWidth ?? 0) > 0
 
-            // 3-a. 폴리곤으로 클립
-            ctx.beginPath()
-            this.polygon.forEach((pt, i) => {
-                const mp = this.worldToMini(pt.x, pt.y)
-                i === 0 ? ctx.moveTo(mp.x, mp.y) : ctx.lineTo(mp.x, mp.y)
-            })
-            ctx.closePath()
-            ctx.clip()
+        if (hasPolygons && hasMapImg) {
+            const tl = this.worldToMini(-this.mapHalfW, -this.mapHalfH)
+            const br = this.worldToMini(this.mapHalfW, this.mapHalfH)
+            const fullW = br.x - tl.x
+            const fullH = br.y - tl.y
 
-            if (this.mapImage && this.mapImage.complete && this.mapImage.naturalWidth > 0) {
-                // 3-b. 실제 맵 이미지 렌더링 (월드 전체 영역에 맞게 스케일)
-                // 맵 이미지는 월드 (-mapHalfW, -mapHalfH) ~ (+mapHalfW, +mapHalfH) 를 커버
-                const tl = this.worldToMini(-this.mapHalfW, -this.mapHalfH)
-                const br = this.worldToMini( this.mapHalfW,  this.mapHalfH)
-                const imgW = br.x - tl.x
-                const imgH = br.y - tl.y
-
-                ctx.drawImage(this.mapImage, tl.x, tl.y, imgW, imgH)
-
-                // 3-c. 약한 어둠 오버레이로 가독성 확보
+            for (const poly of this.polygons) {
+                if (poly.length < 3) continue
+                ctx.save()
+                ctx.beginPath()
+                poly.forEach((pt, i) => {
+                    const mp = this.worldToMini(pt.x, pt.y)
+                    i === 0 ? ctx.moveTo(mp.x, mp.y) : ctx.lineTo(mp.x, mp.y)
+                })
+                ctx.closePath()
+                ctx.clip()
+                ctx.drawImage(this.mapImage!, tl.x, tl.y, fullW, fullH)
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.30)'
                 ctx.fillRect(r.x, r.y, r.w, r.h)
-            } else {
-                // 폴백: 초록 그라데이션
-                const cx = r.x + r.w / 2
-                const cy = r.y + r.h / 2
-                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r.w * 0.6)
-                grad.addColorStop(0, 'rgba(60, 90, 55, 0.9)')
-                grad.addColorStop(1, 'rgba(35, 55, 30, 0.9)')
-                ctx.fillStyle = grad
-                ctx.fillRect(r.x, r.y, r.w, r.h)
+                ctx.restore()
             }
-
+        } else if (hasPolygons) {
+            ctx.save()
+            const cx = r.x + r.w / 2
+            const cy = r.y + r.h / 2
+            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r.w * 0.6)
+            grad.addColorStop(0, 'rgba(60, 90, 55, 0.9)')
+            grad.addColorStop(1, 'rgba(35, 55, 30, 0.9)')
+            ctx.fillStyle = grad
+            ctx.fillRect(r.x, r.y, r.w, r.h)
             ctx.restore()
-
-            // 3-d. 폴리곤 테두리 (폴리곤 클립 밖에서 그려야 전체 선이 보임)
-            ctx.beginPath()
-            this.polygon.forEach((pt, i) => {
-                const mp = this.worldToMini(pt.x, pt.y)
-                i === 0 ? ctx.moveTo(mp.x, mp.y) : ctx.lineTo(mp.x, mp.y)
-            })
-            ctx.closePath()
-            ctx.strokeStyle = 'rgba(200, 230, 180, 0.55)'
-            ctx.lineWidth = 1.2
-            ctx.stroke()
         }
 
         // ── 4. 몬스터 점 ──
@@ -259,36 +251,27 @@ export class MiniMap {
 
         ctx.restore() // 미니맵 클립 해제
 
-        // ── 6. 테두리 (클립 바깥) ──
+        const texts = MiniMap.LOCALE_TEXTS[this.locale]
         ctx.save()
-        ctx.strokeStyle = 'rgba(180, 210, 160, 0.55)'
-        ctx.lineWidth = 1.5
-        ctx.beginPath()
-        ctx.roundRect(r.x, r.y, r.w, r.h, this.CORNER_R)
-        ctx.stroke()
-
-        // ── 7. 헤더 ──
         ctx.fillStyle = 'rgba(6, 8, 6, 0.75)'
         ctx.fillRect(r.x, r.y, r.w, 18)
         ctx.fillStyle = 'rgba(200, 220, 175, 0.92)'
         ctx.font = 'bold 10px monospace'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText('MINIMAP', r.x + r.w / 2, r.y + 9)
+        ctx.fillText(texts.title, r.x + r.w / 2, r.y + 9)
 
-        // ── 8. 줌 레벨 ──
         ctx.fillStyle = 'rgba(170, 190, 150, 0.75)'
         ctx.font = '9px monospace'
         ctx.textAlign = 'right'
         ctx.textBaseline = 'bottom'
         ctx.fillText(`x${this.zoom.toFixed(1)}`, r.x + r.w - 4, r.y + r.h - 3)
 
-        // ── 9. 조작 힌트 (줌 ≤ 0.5 일 때) ──
         if (this.zoom <= 0.5) {
             ctx.fillStyle = 'rgba(255, 255, 200, 0.5)'
             ctx.font = '8px monospace'
             ctx.textAlign = 'center'
-            ctx.fillText('scroll: zoom  drag: pan', r.x + r.w / 2, r.y + r.h - 3)
+            ctx.fillText(texts.hint, r.x + r.w / 2, r.y + r.h - 3)
         }
 
         ctx.restore()

@@ -15,6 +15,7 @@ export type {
     MonsterSpawnConfig,
     AssetConfig,
     MonsterDetailConfig,
+    PlayerConfig,
     ChapterConfig
 } from './types'
 
@@ -34,3 +35,5 @@ export {
     getChapterConfig,
     useChapter
 } from './chapters'
+
+// 플레이어 설정은 entities/Player.ts 내 상수로 통합됨 (BASE_SPEED 등)

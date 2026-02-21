@@ -1,5 +1,12 @@
 import type { Metadata } from 'next'
+import { Cinzel_Decorative } from 'next/font/google'
 import './globals.css'
+
+const cinzelDecorative = Cinzel_Decorative({
+    subsets: ['latin'],
+    weight: ['400', '700'],
+    display: 'swap',
+})
 
 export const metadata: Metadata = {
     title: '🧟 Zombie MMORPG',
@@ -13,7 +20,7 @@ export default function RootLayout({
 }) {
     return (
         <html lang="ko">
-            <body>{children}</body>
+            <body className={cinzelDecorative.className}>{children}</body>
         </html>
     )
 }

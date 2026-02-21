@@ -113,7 +113,7 @@ export function processEntityMovement(
 
     const config = getChapterConfig(chapterId)
     const offset = config.gameplayConfig.collisionYOffset
-    const allowance = config.gameplayConfig.collisionAllowance
+    const allowance = 0
     const timeScale = deltaTime * 60
 
     const moveX = velocity.x * timeScale
@@ -140,7 +140,7 @@ export function processEntityMovement(
     }
 
     // 맵 경계 강제 적용
-    const boundary = config.tileMapConfig.mapBoundary
+    const boundary = config.openWorldMapConfig?.walkableArea ?? config.openWorldMapConfig?.mapBoundary
     if (boundary) {
         clampToBoundary(position, boundary)
 

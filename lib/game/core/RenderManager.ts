@@ -68,7 +68,7 @@ export class RenderManager {
     }
 
     private clearScreen(): void {
-        this.ctx.fillStyle = '#111'
+        this.ctx.fillStyle = '#000'
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
     }
 

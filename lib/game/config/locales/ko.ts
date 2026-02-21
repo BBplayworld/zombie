@@ -72,7 +72,8 @@ export const ko = {
         loading: '로딩 중...',
         paused: '일시정지',
         resume: '계속하기',
-        start: '게임 시작'
+        start: 'GAME START',
+        backToTitle: '게임 처음으로'
     },
     ui: {
         selectLanguage: '언어 선택'

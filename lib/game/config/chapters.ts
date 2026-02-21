@@ -47,41 +47,24 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
         id: 1,
         name: 'Chapter 1: The Beginning',
 
-        // 오픈 월드 맵 설정
+        // 오픈 월드 맵 설정 (5072x5072 단일 맵 이미지, 카메라 시점 2048)
+        // 4048 이동 영역에서 칸 단위 자연스러운 이동을 위한 캐릭터 크기: 48~64 권장 (Player.RECOMMENDED_SIZE_4048)
         openWorldMapConfig: {
-            // 오픈 월드 전체 크기 (map-1_3072.png 이미지 크기)
             worldSize: {
-                width: 3072,
-                height: 3072
+                width: 4048,
+                height: 4048
             },
-
-            // 이동 가능 영역 (벽 안쪽, 실제 플레이 가능한 영역)
             walkableArea: {
-                minX: -1400,   // 왼쪽 벽 안쪽
-                maxX: 1400,    // 오른쪽 벽 안쪽
-                minY: -1400,   // 위쪽 벽 안쪽
-                maxY: 1400     // 아래쪽 벽 안쪽
-            },
-
-            // 배경 타일 설정 (카메라 바깥 검정 부분 채우기용)
-            backgroundTile: {
-                width: 128,              // 타일 렌더링 너비
-                height: 64,              // 타일 렌더링 높이
-                ySpacingMultiplier: 0.7  // Y축 간격 배율
-            },
-
-            // 렌더링 옵션
-            visibleMargin: 20,
-            enableDepthSorting: true
+                minX: -2024,
+                maxX: 2024,
+                minY: -2024,
+                maxY: 2024
+            }
         },
 
         // 게임플레이 설정
         gameplayConfig: {
-            mapGenerationRatio: 0.7,
-            baseSpeed: 5,
             collisionYOffset: 80,
-            collisionAllowance: 0,
-            enableIsoInput: true,
 
             // 몬스터 스폰 설정
             monsterConfig: {
@@ -143,13 +126,11 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
             }
         },
 
-        // 에셋 경로 설정
+        // 에셋 경로 설정 (맵 = 5072x5072 단일 이미지)
         assetConfig: {
-            baseTile: '/assets/chapter-1/tile/basetile-1.png',
-            backgroundTile: '/assets/chapter-1/tile/basetile-2.png',
             player: '/assets/chapter-1/player/player.png',
             fight: '/assets/chapter-1/player/fight.png',
-            mapBackground: '/assets/chapter-1/map/map-1_3072.png',
+            mapBackground: '/assets/chapter-1/map/map.png',
             helmet: '/assets/chapter-1/item/helmet.png',
             armor: '/assets/chapter-1/item/armor.png',
             weapon: '/assets/chapter-1/item/weapon.png',

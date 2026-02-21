@@ -30,16 +30,16 @@ export class ItemDrop {
     render(ctx: CanvasRenderingContext2D, camera: any, resourceLoader?: any): void {
         if (this.isCollected) return
 
-        const screenX = this.position.x - camera.position.x
-        const screenY = this.position.y - camera.position.y
+        // 화면 좌표: camera.worldToScreen 사용 (scale 반영)
+        const screenPos = camera.worldToScreen(this.position.x, this.position.y)
+        const screenX = screenPos.x
+        const screenY = screenPos.y
 
-        // 화면 밖이면 스킵
         if (screenX < -50 || screenX > ctx.canvas.width + 50 ||
             screenY < -50 || screenY > ctx.canvas.height + 50) return
 
         ctx.save()
 
-        // 부유 효과 (Y축으로 살짝 위아래로 움직임)
         const floatY = Math.sin(this.floatTimer) * 5
         ctx.translate(screenX, screenY + floatY)
 

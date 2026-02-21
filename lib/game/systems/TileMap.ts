@@ -1,126 +1,52 @@
 import { Camera } from './Camera'
 
 /**
- * 타일 정보
- */
-interface Tile {
-  imageKey: string
-  x: number
-  y: number
-  width: number
-  height: number
-  gridX: number // 그리드 좌표
-  gridY: number
-}
-
-/**
- * 아이소메트릭 타일맵 시스템
- * 오픈 월드 맵 이미지 기반 렌더링 및 이동 제한 관리
+ * 오픈 월드 맵: 단일 맵 이미지 렌더링 + 이동 가능 영역(폴리곤) 관리
  */
 export class TileMap {
   private CONFIG: any
-  private tiles: Tile[] = []
-  private sourceWidth: number
-  private sourceHeight: number
-  private tileWidth: number
-  private tileHeight: number
   private images: Map<string, HTMLImageElement> = new Map()
 
-  // 맵 데이터 (충돌 감지용 - Polygon Boundary)
-  private mapData: { x: number, y: number }[] = []
+  private mapDataPolygons: { x: number, y: number }[][] = []
   private mapWidth: number = 0
   private mapHeight: number = 0
 
-  // 아이소메트릭 타일 설정
-  private baseTileKey: string = 'baseTile'
-  private frameCount: number = 0
-
-  // 아이소메트릭 좌표 변환 상수
-  private readonly TILE_WIDTH_HALF: number
-  private readonly TILE_HEIGHT_HALF: number
-  private readonly Y_SPACING: number
-
   constructor(config?: any) {
-    this.CONFIG = config || {
-      SOURCE_WIDTH: 1024,
-      SOURCE_HEIGHT: 1024,
-      TILE_WIDTH: 128,
-      TILE_HEIGHT: 124,
-      Y_SPACING_MULTIPLIER: 0.5,
-      OVERLAP_OFFSET: 80,
-      VISIBLE_MARGIN: 20,
-      ENABLE_DEPTH_SORTING: true,
-    }
-
-    // OpenWorldMapConfig 구조 지원
-    if (this.CONFIG.worldSize) {
-      this.sourceWidth = this.CONFIG.worldSize.width
-      this.sourceHeight = this.CONFIG.worldSize.height
-    } else {
-      this.sourceWidth = this.CONFIG.SOURCE_WIDTH || this.CONFIG.sourceWidth || 1024
-      this.sourceHeight = this.CONFIG.SOURCE_HEIGHT || this.CONFIG.sourceHeight || 1024
-    }
-
-    if (this.CONFIG.backgroundTile) {
-      this.tileWidth = this.CONFIG.backgroundTile.width
-      this.tileHeight = this.CONFIG.backgroundTile.height
-    } else {
-      this.tileWidth = this.CONFIG.TILE_WIDTH || this.CONFIG.tileWidth || 128
-      this.tileHeight = this.CONFIG.TILE_HEIGHT || this.CONFIG.tileHeight || 64
-    }
-
-    this.TILE_WIDTH_HALF = this.tileWidth / 2
-    this.TILE_HEIGHT_HALF = this.tileHeight / 2
-
-    let yMultiplier = 0.5
-    if (this.CONFIG.backgroundTile) {
-      yMultiplier = this.CONFIG.backgroundTile.ySpacingMultiplier
-    } else {
-      yMultiplier = this.CONFIG.Y_SPACING_MULTIPLIER || this.CONFIG.ySpacingMultiplier || 0.5
-    }
-
-    this.Y_SPACING = this.TILE_HEIGHT_HALF * yMultiplier
+    this.CONFIG = config || {}
   }
 
-  /**
-   * 이미지 리소스 설정
-   */
   setImages(images: Map<string, HTMLImageElement>): void {
     this.images = images
   }
 
   /**
-   * 베이스 타일 키 설정
-   */
-  setBaseTile(key: string): void {
-    this.baseTileKey = key
-  }
-
-  /**
    * 맵 데이터 로드 (충돌 감지용 폴리곤)
+   * @param mapData 단일 폴리곤(Point[]) 또는 다중 폴리곤(Point[][])
    */
-  loadMapData(mapData: { x: number, y: number }[], width: number, height: number): void {
-    this.mapData = mapData
+  loadMapData(
+    mapData: { x: number, y: number }[] | { x: number, y: number }[][],
+    width: number,
+    height: number
+  ): void {
+    const first = mapData[0]
+    const isMulti = Array.isArray(first) && first.length > 0 && typeof (first as { x?: number }[])[0] === 'object'
+    this.mapDataPolygons = isMulti
+      ? (mapData as { x: number, y: number }[][])
+      : [mapData as { x: number, y: number }[]]
     this.mapWidth = width
     this.mapHeight = height
   }
 
-  /** 미니맵용 폴리곤 데이터 반환 */
-  getMapPolygon(): { x: number, y: number }[] {
-    return this.mapData
+  /** 미니맵용 폴리곤 데이터 반환 (다중 폴리곤 지원) */
+  getMapPolygon(): { x: number, y: number }[] | { x: number, y: number }[][] {
+    return this.mapDataPolygons.length === 1
+      ? this.mapDataPolygons[0]
+      : this.mapDataPolygons
   }
 
   /** 미니맵용 월드 경계 반환 */
   getWalkableBounds(): { minX: number, maxX: number, minY: number, maxY: number } | null {
     return this.CONFIG.walkableArea || this.CONFIG.mapBoundary || null
-  }
-
-  /**
-   * 특정 그리드 위치가 이동 가능한지 확인
-   * @deprecated Polygon collision does not use grid.
-   */
-  isWalkable(gridX: number, gridY: number): boolean {
-    return false
   }
 
   /**
@@ -149,9 +75,9 @@ export class TileMap {
     if (!this.isInWalkableArea(worldX, worldY)) return false
 
     // 2. 맵 데이터가 없으면 영역 체크만으로 충분
-    if (!this.mapData || this.mapData.length < 3) return true
+    if (!this.mapDataPolygons.length) return true
 
-    // 3. Polygon Collision Check (Ray Casting)
+    // 3. Polygon Collision Check (다중 폴리곤 중 하나라도 포함이면 이동 가능)
     if (buffer > 0) {
       const offsets = [
         { x: 0, y: -buffer },
@@ -159,82 +85,189 @@ export class TileMap {
         { x: -buffer, y: 0 },
         { x: buffer, y: 0 }
       ]
-
       for (const offset of offsets) {
-        if (!this.isPointInPolygon(worldX + offset.x, worldY + offset.y)) {
+        if (!this.isPointInAnyPolygon(worldX + offset.x, worldY + offset.y)) {
           return false
         }
       }
       return true
     }
+    return this.isPointInAnyPolygon(worldX, worldY)
+  }
 
-    return this.isPointInPolygon(worldX, worldY)
+  /** 다중 폴리곤 중 한 곳이라도 포함되면 true */
+  private isPointInAnyPolygon(x: number, y: number): boolean {
+    for (const points of this.mapDataPolygons) {
+      if (points.length >= 3 && this.rayCastPointInPolygon(x, y, points)) return true
+    }
+    return false
   }
 
   /**
-   * Point-In-Polygon Algorithm (Ray Casting)
+   * Point-In-Polygon (Ray Casting)
    */
-  private isPointInPolygon(x: number, y: number): boolean {
+  private rayCastPointInPolygon(x: number, y: number, points: { x: number, y: number }[]): boolean {
     let inside = false
-    const points = this.mapData
     for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
       const xi = points[i].x, yi = points[i].y
       const xj = points[j].x, yj = points[j].y
-
       const intersect = ((yi > y) !== (yj > y)) &&
         (x < (xj - xi) * (y - yi) / (yj - yi) + xi)
-
       if (intersect) inside = !inside
     }
     return inside
   }
 
   /**
-   * 그리드 좌표를 월드 좌표로 변환 (public)
+   * 이동 가능 영역(폴리곤) 내부의 랜덤 좌표 반환 (게임 시작용)
    */
-  getWorldPosition(gridX: number, gridY: number): { x: number; y: number } {
-    return this.gridToWorld(gridX, gridY)
-  }
-
-  /**
-   * 그리드 좌표를 아이소메트릭 월드 좌표로 변환
-   */
-  public gridToWorld(gridX: number, gridY: number): { x: number; y: number } {
-    return {
-      x: (gridX - gridY) * this.TILE_WIDTH_HALF,
-      y: (gridX + gridY) * this.Y_SPACING
+  getRandomWalkablePosition(): { x: number; y: number } | null {
+    if (!this.mapDataPolygons.length) return null
+    const bounds = this.getWalkableBounds()
+    const minX = bounds?.minX ?? -2024
+    const maxX = bounds?.maxX ?? 2024
+    const minY = bounds?.minY ?? -2024
+    const maxY = bounds?.maxY ?? 2024
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const x = minX + Math.random() * (maxX - minX)
+      const y = minY + Math.random() * (maxY - minY)
+      if (this.isWalkableAtWorld(x, y)) return { x, y }
     }
+    return null
   }
 
   /**
-   * 카메라 뷰포트에 보이는 타일들만 동적으로 생성
-   * (Polygon 모드에서는 개별 타일 렌더링을 지원하지 않음 - 통맵 사용 권장)
+   * 좌표를 월드 좌표로 반환 (타일 그리드 미사용 시 단순 identity)
    */
-  updateVisibleTiles(camera: Camera): void {
-    this.tiles = []
+  getWorldPosition(x: number, y: number): { x: number; y: number } {
+    return { x, y }
   }
 
   /**
-   * 타일맵 렌더링
+   * 그리드 인덱스를 월드 좌표로 변환 (폴백용, 단순 스케일)
+   */
+  gridToWorld(gridX: number, gridY: number): { x: number; y: number } {
+    return this.getWorldPosition(gridX, gridY)
+  }
+
+  updateVisibleTiles(_camera: Camera): void {
+    // 단일 맵 모드에서는 사용하지 않음
+  }
+
+  /** 턴제 RPG 스타일 이동 스텝 그리드 한 칸 크기 (Player 이동 스텝과 동일하게 128*2) */
+  private static readonly STEP_GRID_SIZE = 256
+
+  /**
+   * 단일 맵 이미지 렌더링
    */
   render(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    const worldSize = this.CONFIG.worldSize
+    const mapWidth = worldSize?.width
+    const mapHeight = worldSize?.height
+    const scale = camera.scale ?? 1
+    const screenW = mapWidth * scale
+    const screenH = mapHeight * scale
+    const screenPos = camera.worldToScreen(0, 0)
+    const drawX = screenPos.x - screenW / 2
+    const drawY = screenPos.y - screenH / 2
+
     const mapBg = this.images.get('mapBackground')
-
-    if (mapBg && mapBg.complete && mapBg.naturalWidth !== 0) {
-      // 맵 이미지 렌더링
-      const screenPos = camera.worldToScreen(0, 0)
-      const worldSize = this.CONFIG.worldSize
-      let mapWidth = worldSize ? worldSize.width : mapBg.naturalWidth
-      let mapHeight = worldSize ? worldSize.height : mapBg.naturalHeight
-
-      const drawX = screenPos.x - mapWidth / 2
-      const drawY = screenPos.y - mapHeight / 2
-
-      ctx.drawImage(mapBg, drawX, drawY, mapWidth, mapHeight)
-
-      // 1. 이동 가능 영역 그림자 처리 (Point #1)
-      const area = this.CONFIG.walkableArea || this.CONFIG.mapBoundary
-      // 그림자 없음 - 순수 맵 이미지만 렌더링
+    if (mapBg?.complete && (mapBg.naturalWidth ?? 0) > 0) {
+      ctx.drawImage(mapBg, drawX, drawY, screenW, screenH)
     }
+
+    this.renderMovementStepGrid(ctx, camera)
+    this.renderEdgeShadows(ctx, camera, drawX, drawY, screenW, screenH)
+  }
+
+  /**
+   * 이동 가능 범위를 턴제 RPG처럼 스텝별 사각형 그리드로 표시.
+   * 네모는 셀보다 작게 그려서 이동 가능한 x,y 범위 안에만 들어가도록 함.
+   */
+  private renderMovementStepGrid(ctx: CanvasRenderingContext2D, camera: Camera): void {
+    const bounds = this.getWalkableBounds()
+    if (!bounds) return
+
+    const step = TileMap.STEP_GRID_SIZE
+    const scale = camera.scale ?? 1
+    const padding = step * 2
+    /** 그리드 셀 대비 그리기 비율 (1보다 작게 해서 경계 안쪽에만 박스 표시) */
+    const drawRatio = 0.95
+    const drawStep = step * drawRatio
+    const inset = (step - drawStep) / 2
+
+    const startX = Math.floor(bounds.minX / step) * step
+    const startY = Math.floor(bounds.minY / step) * step
+
+    ctx.save()
+    ctx.fillStyle = 'rgba(64, 128, 255, 0.12)'
+    ctx.strokeStyle = 'rgba(64, 128, 255, 0.35)'
+    ctx.lineWidth = 1
+
+    for (let gx = startX; gx < bounds.maxX; gx += step) {
+      for (let gy = startY; gy < bounds.maxY; gy += step) {
+        const cellMinX = gx
+        const cellMinY = gy
+        const cellMaxX = gx + step
+        const cellMaxY = gy + step
+        if (cellMinX < bounds.minX || cellMaxX > bounds.maxX || cellMinY < bounds.minY || cellMaxY > bounds.maxY) continue
+        const cx = gx + step / 2
+        const cy = gy + step / 2
+        if (!this.isWalkableAtWorld(cx, cy)) continue
+        if (!camera.isInView(gx, gy, step, step, padding)) continue
+
+        const screen = camera.worldToScreen(gx + inset, gy + inset)
+        const size = drawStep * scale
+        ctx.fillRect(screen.x, screen.y, size, size)
+        ctx.strokeRect(screen.x, screen.y, size, size)
+      }
+    }
+
+    ctx.restore()
+  }
+
+  /**
+   * 월드맵 동서남북 가장자리 비네트 그림자 (게임 시작 화면과 동일한 느낌)
+   */
+  private renderEdgeShadows(
+    ctx: CanvasRenderingContext2D,
+    camera: Camera,
+    drawX: number,
+    drawY: number,
+    mapWidth: number,
+    mapHeight: number
+  ): void {
+    const edgeSize = Math.min(mapWidth, mapHeight) * 0.03
+    const topH = edgeSize
+    const bottomH = edgeSize
+    const leftW = edgeSize
+    const rightW = edgeSize
+
+    ctx.save()
+    // 상단
+    const gradTop = ctx.createLinearGradient(drawX, drawY, drawX, drawY + topH)
+    gradTop.addColorStop(0, 'rgba(0, 0, 0, 0.75)')
+    gradTop.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    ctx.fillStyle = gradTop
+    ctx.fillRect(drawX, drawY, mapWidth, topH)
+    // 하단
+    const gradBottom = ctx.createLinearGradient(drawX, drawY + mapHeight - bottomH, drawX, drawY + mapHeight)
+    gradBottom.addColorStop(0, 'rgba(0, 0, 0, 0)')
+    gradBottom.addColorStop(1, 'rgba(0, 0, 0, 0.92)')
+    ctx.fillStyle = gradBottom
+    ctx.fillRect(drawX, drawY + mapHeight - bottomH, mapWidth, bottomH)
+    // 좌측
+    const gradLeft = ctx.createLinearGradient(drawX, drawY, drawX + leftW, drawY)
+    gradLeft.addColorStop(0, 'rgba(0, 0, 0, 0.75)')
+    gradLeft.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    ctx.fillStyle = gradLeft
+    ctx.fillRect(drawX, drawY, leftW, mapHeight)
+    // 우측
+    const gradRight = ctx.createLinearGradient(drawX + mapWidth - rightW, drawY, drawX + mapWidth, drawY)
+    gradRight.addColorStop(0, 'rgba(0, 0, 0, 0)')
+    gradRight.addColorStop(1, 'rgba(0, 0, 0, 0.75)')
+    ctx.fillStyle = gradRight
+    ctx.fillRect(drawX + mapWidth - rightW, drawY, rightW, mapHeight)
+    ctx.restore()
   }
 }

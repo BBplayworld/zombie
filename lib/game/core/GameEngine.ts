@@ -135,9 +135,7 @@ export class GameEngine {
 
     await this.resourceLoader.loadImages(imageMap)
 
-    // 타일맵에 이미지 설정
     this.tileMap.setImages(this.resourceLoader.getImages())
-    this.tileMap.setBaseTile('baseTile')
 
     console.log('  ✅ [STEP 2-1] Images loaded')
   }
@@ -158,25 +156,32 @@ export class GameEngine {
       this.tileMap.loadMapData(jsonMap.tiles, jsonMap.width, jsonMap.height)
     } catch (e) {
       console.warn('  ⚠️ Using default config map data')
-      this.tileMap.loadMapData(
-        chapterConfig.mapData.tiles,
-        chapterConfig.mapData.width,
-        chapterConfig.mapData.height
-      )
+      const md = chapterConfig.mapData
+      this.tileMap.loadMapData(md.tiles, md.width, md.height)
     }
 
-    // 미니맵에 폴리곤 + 월드 경계 + 맵 이미지 전달
     const miniMap = this.renderManager.getMiniMap()
     const polygon = this.tileMap.getMapPolygon()
-    const bounds  = this.tileMap.getWalkableBounds()
-    if (polygon.length > 0) miniMap.setMapPolygon(polygon)
+    const bounds = this.tileMap.getWalkableBounds()
+    if (Array.isArray(polygon) && polygon.length > 0) {
+      miniMap.setMapPolygon(Array.isArray(polygon[0]) ? polygon : [polygon as { x: number; y: number }[]])
+    }
     if (bounds) miniMap.setWorldBounds(bounds)
+    const lang = typeof navigator !== 'undefined' && navigator.language?.startsWith('ko') ? 'ko' : 'en'
+    miniMap.setLocale(lang)
 
-    // 실제 맵 이미지(mapBackground)를 미니맵에 설정
-    const mapImg = this.resourceLoader.getImage('mapBackground')
     const worldSize = chapterConfig.openWorldMapConfig?.worldSize
+    const mapImg = this.resourceLoader.getImage('mapBackground')
     if (mapImg && worldSize) {
       miniMap.setMapImage(mapImg, worldSize.width, worldSize.height)
+    }
+
+    if (chapterConfig.openWorldMapConfig) {
+      const startPos = this.tileMap.getRandomWalkablePosition()
+      if (startPos) {
+        this.player.position.x = startPos.x
+        this.player.position.y = startPos.y
+      }
     }
 
     console.log('  ✅ [STEP 2-2] Map data loaded')
@@ -210,7 +215,7 @@ export class GameEngine {
 
     this.state = 'ready'
 
-    // 초기 카메라 위치 설정 및 렌더링
+    this.camera.setScaleToViewSize()
     this.camera.follow(this.player.position, true)
     this.tileMap.updateVisibleTiles(this.camera)
     this.player.update(0)
@@ -453,6 +458,7 @@ export class GameEngine {
     this.canvas.width = width
     this.canvas.height = height
     this.camera.resize(width, height)
+    this.camera.setScaleToViewSize()
   }
 
   pause(): void {
@@ -466,6 +472,13 @@ export class GameEngine {
       this.state = 'playing'
       this.lastFrameTime = performance.now()
       this.gameLoop(this.lastFrameTime)
+    }
+  }
+
+  /** 일시정지 → 타이틀(게임 처음) 복귀 시 상태만 ready로 변경. 루프는 pause()로 이미 정지된 상태. */
+  resetToTitle(): void {
+    if (this.state === 'paused') {
+      this.state = 'ready'
     }
   }
 

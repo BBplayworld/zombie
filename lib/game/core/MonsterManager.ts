@@ -79,13 +79,17 @@ export class MonsterManager {
     /**
      * 몬스터 스폰 실행
      */
+    /** 경계에서 안쪽으로 최소 이만큼 떨어진 곳에만 스폰 (끼임 방지) */
+    private static readonly SPAWN_BOUNDARY_MARGIN = 150
+    /** 스폰 지점이 이동가능 영역 안쪽으로 이만큼 여유 있어야 함 (x,y 방어 버퍼) */
+    private static readonly SPAWN_WALKABLE_BUFFER = 90
+
     private executeMonsterSpawn(targetCount: number, config: any, playerPosition: Vector2): number {
-        const SPAWN_MARGIN = 100
         const MAX_ATTEMPTS = targetCount * 50
         let spawnedCount = 0
 
         for (let attempts = 0; attempts < MAX_ATTEMPTS && spawnedCount < targetCount; attempts++) {
-            const spawnPos = this.generateSpawnPosition(config, SPAWN_MARGIN)
+            const spawnPos = this.generateSpawnPosition(config, MonsterManager.SPAWN_BOUNDARY_MARGIN)
             if (!spawnPos) continue
 
             const isValidSpawn = this.validateSpawnPosition(spawnPos.x, spawnPos.y, playerPosition, config)
@@ -147,10 +151,10 @@ export class MonsterManager {
      */
     private validateSpawnPosition(x: number, y: number, playerPosition: Vector2, config: any): boolean {
         const SAFE_DISTANCE_FROM_PLAYER = 500
-        const offset = config.gameplayConfig?.collisionYOffset || 80 // Default to 80 if missing
+        const offset = config.gameplayConfig?.collisionYOffset || 80
 
-        // 이동 가능한 타일인지 확인 (buffer 적용, check FEET position)
-        if (!this.tileMap.isWalkableAtWorld(x, y + offset, 50)) return false
+        // 이동가능 영역 안쪽으로 SPAWN_WALKABLE_BUFFER만큼 여유 있어야 함 (끼임 방지)
+        if (!this.tileMap.isWalkableAtWorld(x, y + offset, MonsterManager.SPAWN_WALKABLE_BUFFER)) return false
 
         // 플레이어와의 거리 확인
         const distToPlayer = Math.sqrt(

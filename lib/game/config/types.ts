@@ -75,17 +75,6 @@ export interface OpenWorldMapConfig {
     // 이동 가능 영역 (벽 안쪽, 플레이어/몬스터가 접근 가능한 영역)
     walkableArea: Boundary
 
-    // 배경 타일 설정 (카메라 바깥 검정 부분 채우기용)
-    backgroundTile: {
-        width: number              // 타일 렌더링 너비
-        height: number             // 타일 렌더링 높이
-        ySpacingMultiplier: number // Y축 간격 배율
-    }
-
-    // 렌더링 옵션
-    visibleMargin: number      // 화면 밖 여유 렌더링 범위
-    enableDepthSorting: boolean // 깊이 정렬 활성화
-
     // @deprecated - 하위 호환용
     mapBoundary?: Boundary
     overlapOffset?: number
@@ -108,18 +97,7 @@ export interface MapData {
 // ============================================================================
 
 export interface GameplayConfig {
-    // 맵 생성
-    mapGenerationRatio: number
-
-    // 이동 속도
-    baseSpeed: number
-
-    // 충돌 판정
     collisionYOffset: number
-    collisionAllowance: number
-    enableIsoInput: boolean
-
-    // 몬스터 설정
     monsterConfig: MonsterSpawnConfig
 }
 
@@ -134,15 +112,39 @@ export interface MonsterSpawnConfig {
 // ============================================================================
 
 export interface AssetConfig {
-    baseTile: string
-    backgroundTile: string
     player: string
     fight: string
-    mapBackground: string
+    /** 단일 맵 이미지 (선택, mapTile1~4 대신 사용 가능) */
+    mapBackground?: string
+    mapTile1?: string
+    mapTile2?: string
+    mapTile3?: string
+    mapTile4?: string
+    mapTile5?: string
+    mapTile6?: string
+    mapTile7?: string
+    mapTile8?: string
+    mapTile9?: string
+    mapTile10?: string
+    mapTile11?: string
+    mapTile12?: string
+    mapTile13?: string
+    mapTile14?: string
+    mapTile15?: string
+    mapTile16?: string
     helmet: string
     armor: string
     weapon: string
     window: string
+}
+
+// ============================================================================
+// 플레이어어 상세 설정 타입
+// ============================================================================
+
+export interface PlayerConfig {
+    // 이동 속도
+    baseSpeed: number
 }
 
 // ============================================================================

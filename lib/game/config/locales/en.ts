@@ -69,7 +69,8 @@ export const en = {
         loading: 'Loading...',
         paused: 'Paused',
         resume: 'Resume',
-        start: 'Start Game'
+        start: 'GAME START',
+        backToTitle: 'Back to Title'
     },
     ui: {
         selectLanguage: 'Select Language'

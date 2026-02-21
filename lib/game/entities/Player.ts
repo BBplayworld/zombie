@@ -58,11 +58,21 @@ export class Player {
   // 타일맵 참조 (이동 제한용)
   private tileMap: TileMap | null = null
 
+  /** 4048 맵에서 칸 단위 이동용 캐릭터 크기 */
+  static readonly RECOMMENDED_SIZE_4048 = 150
+  /** 한 입력당 이동 거리 = width * 배수 */
+  static readonly STEP_SIZE_MULTIPLIER = 2
+  /** 이동 속도 (픽셀/초). 4048 맵에서 한 스텝을 약 0.3~0.5초에 이동 */
+  static readonly BASE_SPEED = 380
+
+  private moveTarget: Vector2 | null = null
+  private static readonly ARRIVAL_DISTANCE = 4
+
   constructor(x: number = 0, y: number = 0) {
     this.position = new Vector2(x, y)
     this.velocity = new Vector2(0, 0)
-    this.width = 200
-    this.height = 200
+    this.width = Player.RECOMMENDED_SIZE_4048
+    this.height = Player.RECOMMENDED_SIZE_4048
     this.speed = 0
     this.angle = 0
 
@@ -184,10 +194,7 @@ export class Player {
     // Current HP healing? Maybe keep percentage? For now just clamp.
     if (this.hp > this.maxHp) this.hp = this.maxHp
 
-    // Speed = Base 15 + Agility * 0.5
-    const config = getChapterConfig(1)
-    const baseSpeed = config.gameplayConfig.baseSpeed || 15
-    this.speed = baseSpeed + (this.stats.Agility * 0.08)
+    this.speed = Player.BASE_SPEED + this.stats.Agility * 0.08
 
     // Damage = Base 10 + Might * 2
     this.damage = 10 + this.stats.Might * 2
@@ -295,45 +302,54 @@ export class Player {
     if (this.tileMap) {
       const config = getChapterConfig(1)
       const offset = config.gameplayConfig.collisionYOffset
-      const allowance = config.gameplayConfig.collisionAllowance || 0
-      const timeScale = deltaTime * 60
 
-      const moveX = this.velocity.x * timeScale
-      const nextX = this.position.x + moveX
+      if (this.moveTarget) {
+        const dx = this.moveTarget.x - this.position.x
+        const dy = this.moveTarget.y - this.position.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const moveBy = Math.min(this.speed * deltaTime, dist)
 
-      if (this.tileMap.isWalkableAtWorld(nextX, this.position.y + offset, allowance)) {
-        this.position.x = nextX
-      }
+        if (dist <= Player.ARRIVAL_DISTANCE) {
+          this.position.x = this.moveTarget.x
+          this.position.y = this.moveTarget.y
+          this.moveTarget = null
+        } else if (moveBy > 0) {
+          this.position.x += (dx / dist) * moveBy
+          this.position.y += (dy / dist) * moveBy
+        }
 
-      const moveY = this.velocity.y * timeScale
-      const nextY = this.position.y + moveY
-
-      if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, allowance)) {
-        this.position.y = nextY
-      }
-
-      const walkableArea = config.openWorldMapConfig.walkableArea
-      if (walkableArea) {
-        const BOUNDARY_MARGIN = 50
-        if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) this.position.x = walkableArea.minX + BOUNDARY_MARGIN
-        if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
-        if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) this.position.y = walkableArea.minY + BOUNDARY_MARGIN
-        if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
+        const walkableArea = config.openWorldMapConfig.walkableArea
+        if (walkableArea) {
+          const BOUNDARY_MARGIN = 50
+          if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) this.position.x = walkableArea.minX + BOUNDARY_MARGIN
+          if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
+          if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) this.position.y = walkableArea.minY + BOUNDARY_MARGIN
+          if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
+        }
       }
     } else {
-      const timeScale = deltaTime * 60
-      this.position.x += this.velocity.x * timeScale
-      this.position.y += this.velocity.y * timeScale
+      if (this.moveTarget) {
+        const dx = this.moveTarget.x - this.position.x
+        const dy = this.moveTarget.y - this.position.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const moveBy = Math.min(this.speed * deltaTime, dist)
+        if (dist <= Player.ARRIVAL_DISTANCE) {
+          this.position.x = this.moveTarget.x
+          this.position.y = this.moveTarget.y
+          this.moveTarget = null
+        } else if (moveBy > 0) {
+          this.position.x += (dx / dist) * moveBy
+          this.position.y += (dy / dist) * moveBy
+        }
+      }
     }
 
+    this.isMoving = this.moveTarget != null
     if (this.isMoving) {
-      const animName = `walk_${this.direction}`
-      this.spriteAnimation.play(animName)
+      this.spriteAnimation.play(`walk_${this.direction}`)
     } else {
-      const animName = `idle_${this.direction === 'up' ? 'left' : this.direction}`
-      this.spriteAnimation.play(animName)
+      this.spriteAnimation.play(`idle_${this.direction === 'up' ? 'left' : this.direction}`)
     }
-
     this.spriteAnimation.update(deltaTime)
   }
 
@@ -342,81 +358,33 @@ export class Player {
    */
   move(moveX: number, moveY: number): void {
     const config = getChapterConfig(1)
-    // this.speed is calculated in updateStats, logic removed from here
-
-    if (config.gameplayConfig.enableIsoInput) {
-      if (Math.abs(moveX) > 0 || Math.abs(moveY) > 0) {
-        const inputMag = Math.sqrt(moveX * moveX + moveY * moveY)
-        const nInputX = moveX / inputMag
-        const nInputY = moveY / inputMag
-
-        const lookAhead = 20
-        const offset = config.gameplayConfig.collisionYOffset
-        const allowance = config.gameplayConfig.collisionAllowance || 0
-
-        const X_COMP = 2 / 2.236
-        const Y_COMP = 1 / 2.236
-
-        const Dirs = [
-          { name: 'TR', vx: X_COMP, vy: -Y_COMP },
-          { name: 'BR', vx: X_COMP, vy: Y_COMP },
-          { name: 'BL', vx: -X_COMP, vy: Y_COMP },
-          { name: 'TL', vx: -X_COMP, vy: -Y_COMP }
-        ]
-
-        let resultX = 0
-        let resultY = 0
-        let possibleCount = 0
-
-        for (const dir of Dirs) {
-          const dot = nInputX * dir.vx + nInputY * dir.vy
-
-          if (dot > 0.2) {
-            const canGo = this.tileMap?.isWalkableAtWorld(
-              this.position.x + dir.vx * lookAhead,
-              this.position.y + dir.vy * lookAhead + offset,
-              allowance
-            )
-
-            if (canGo) {
-              const weight = dot
-              resultX += dir.vx * weight
-              resultY += dir.vy * weight
-              possibleCount++
-            }
-          }
-        }
-
-        if (possibleCount > 0) {
-          const resMag = Math.sqrt(resultX * resultX + resultY * resultY)
-          if (resMag > 0) {
-            moveX = resultX
-            moveY = resultY
-          }
-        }
-      }
-    }
 
     if (moveX === 0 && moveY === 0) {
       this.isMoving = false
       this.velocity.x = 0
       this.velocity.y = 0
+      this.moveTarget = null
       return
     }
 
-    this.isMoving = true
-
     const magnitude = Math.sqrt(moveX * moveX + moveY * moveY)
-    if (magnitude > 0) {
-      moveX /= magnitude
-      moveY /= magnitude
-    }
+    if (magnitude <= 0) return
+    const dirX = moveX / magnitude
+    const dirY = moveY / magnitude
 
-    this.velocity.x = moveX * this.speed
-    this.velocity.y = moveY * this.speed
+    // 매 프레임 현재 위치 기준으로 목표 갱신 → 대각선/방향 전환이 즉시 반영되어 답답함 해소
+    const stepSize = this.width * Player.STEP_SIZE_MULTIPLIER
+    const targetX = this.position.x + stepSize * dirX
+    const targetY = this.position.y + stepSize * dirY
+    const offset = config.gameplayConfig.collisionYOffset
+    if (!this.tileMap?.isWalkableAtWorld(targetX, targetY + offset, 0)) return
 
-    this.angle = Math.atan2(moveY, moveX)
-    this.updateDirection(moveX, moveY)
+    this.moveTarget = new Vector2(targetX, targetY)
+    this.isMoving = true
+    this.velocity.x = dirX * this.speed
+    this.velocity.y = dirY * this.speed
+    this.angle = Math.atan2(dirY, dirX)
+    this.updateDirection(dirX, dirY)
   }
 
   private updateDirection(moveX: number, moveY: number): void {

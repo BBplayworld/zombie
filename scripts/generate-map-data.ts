@@ -7,185 +7,120 @@ const SIMPLIFICATION_THRESHOLD = 2; // Keep high precision
 const RED_THRESHOLD = 200; // Red channel must be > 200
 const OTHER_COLOR_THRESHOLD = 100; // Green/Blue must be < 100 to be considered "Red Line"
 
-async function getMapImagePath() {
-    // Defines the precise "Line Map" provided by the user
-    return 'public/assets/chapter-1/map/map-1_3072-line.png';
+/**
+ * 이동 가능 영역 데이터화용 입력 이미지: debug 디렉토리의 map.jpg 만 사용
+ */
+function getMapImagePath(projectRoot: string): string | null {
+    const p = path.join(projectRoot, 'public/assets/chapter-1/map/debug', 'map.jpg');
+    return fs.existsSync(p) ? p : null;
 }
 
-async function generateMapData() {
-    const projectRoot = process.cwd();
-    const imagePathRel = await getMapImagePath();
-    const mapPath = path.join(projectRoot, imagePathRel);
+type Point = { x: number; y: number };
 
-    const outputDir = path.dirname(mapPath);
-    const outputPath = path.join(outputDir, 'map-data.json');
-    const debugImagePath = path.join(outputDir, 'map-debug.png');
+function isRedPixel(r: number, g: number, b: number): boolean {
+    return r > RED_THRESHOLD && g < OTHER_COLOR_THRESHOLD && b < OTHER_COLOR_THRESHOLD;
+}
 
-    console.log(`Analyzing LINE map image: ${mapPath}`);
+/**
+ * 단일 타일 이미지 분석: 빨간색 픽셀을 이동 가능 영역으로, 연결 요소별 폴리곤 추출.
+ * 반환 좌표는 해당 타일 기준 중심 (0,0) = 타일 중앙. JPG/PNG 지원.
+ */
+async function processOneTile(
+    mapPath: string,
+    tileIndex: number,
+    debugOutDir: string
+): Promise<Point[][]> {
+    const image = await loadImage(mapPath);
+    const width = image.width;
+    const height = image.height;
 
-    if (!fs.existsSync(mapPath)) {
-        console.error(`Error: Map line image not found at ${mapPath}`);
-        return;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    // 빨간색 = 이동 가능(1), 그 외 = 비이동(0)
+    const mask = new Uint8Array(width * height);
+    for (let i = 0; i < width * height; i++) {
+        const r = data[i * 4];
+        const g = data[i * 4 + 1];
+        const b = data[i * 4 + 2];
+        mask[i] = isRedPixel(r, g, b) ? 1 : 0;
     }
 
-    try {
-        const image = await loadImage(mapPath);
-        const width = image.width;
-        const height = image.height;
+    const globalVisited = new Uint8Array(width * height);
+    const allPolygons: Point[][] = [];
+    const dx4 = [0, 1, 0, -1];
+    const dy4 = [-1, 0, 1, 0];
+    const dx8 = [0, 1, 1, 1, 0, -1, -1, -1];
+    const dy8 = [-1, -1, 0, 1, 1, 1, 0, -1];
 
-        console.log(`Image size: ${width}x${height}`);
-
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image, 0, 0);
-
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const data = imageData.data;
-
-        // 1. Identify Logic:
-        // The Red Line is the FENCE.
-        // We want to find the Walkable Area enclosed by this Red Line.
-        // We will Flood Fill from the center (assuming center is inside).
-        // The Red Line pixels act as walls (value 0). Everything else is potential floor (value 1).
-
-        // Create mask: 0 = Wall (Red Line), 1 = Walkable (Not Red)
-        const mask = new Uint8Array(width * height);
-
-        for (let i = 0; i < width * height; i++) {
-            const r = data[i * 4];
-            const g = data[i * 4 + 1];
-            const b = data[i * 4 + 2];
-            // alpha? Assume opacity.
-
-            // Check if pixel is RED (The Boundary)
-            const isRedLine = r > RED_THRESHOLD && g < OTHER_COLOR_THRESHOLD && b < OTHER_COLOR_THRESHOLD;
-
-            if (isRedLine) {
-                mask[i] = 0; // Wall
-            } else {
-                mask[i] = 1; // Walkable space (potentially)
-            }
-        }
-
-        // 2. Flood Fill to identify the enclosed walkable region
-        const visited = new Uint8Array(width * height); // 0=unvisited, 1=verified walkable
-        const queue: number[] = [];
-
-        // Find Start Point
-        let startIdx = -1;
-        const cx = Math.floor(width / 2);
-        const cy = Math.floor(height / 2);
-
-        // Search spiral for a non-red pixel
-        let foundStart = false;
-        const maxR = Math.min(width, height) / 2;
-
-        // Check exact center first
-        if (mask[cy * width + cx] === 1) {
-            startIdx = cy * width + cx;
-            foundStart = true;
-        } else {
-            console.log("Center is on the Red Line? Searching for open space...");
-            for (let r = 5; r < maxR; r += 10) {
-                for (let deg = 0; deg < 360; deg += 30) {
-                    const rad = deg * Math.PI / 180;
-                    const tx = Math.floor(cx + Math.cos(rad) * r);
-                    const ty = Math.floor(cy + Math.sin(rad) * r);
-                    if (tx >= 0 && tx < width && ty >= 0 && ty < height) {
-                        const idx = ty * width + tx;
-                        if (mask[idx] === 1) {
-                            startIdx = idx;
-                            foundStart = true;
-                            break;
-                        }
-                    }
-                }
-                if (foundStart) break;
-            }
-        }
-
-        if (!foundStart) {
-            console.error("Could not find any walkable area inside!");
-            return;
-        }
-
-        console.log(`Starting Flood Fill from ${startIdx % width}, ${Math.floor(startIdx / width)}`);
-
-        // BFS
-        queue.push(startIdx);
-        visited[startIdx] = 1;
-        let visitedCount = 0;
+    for (let seed = 0; seed < width * height; seed++) {
+        if (mask[seed] !== 1 || globalVisited[seed] === 1) continue;
+        const queue: number[] = [seed];
+        globalVisited[seed] = 1;
         let qHead = 0;
-
         while (qHead < queue.length) {
             const currIdx = queue[qHead++];
-            visitedCount++;
-
-            const cx = currIdx % width;
-            const cy = Math.floor(currIdx / width);
-
-            const neighbors = [
-                { x: cx, y: cy - 1 },
-                { x: cx + 1, y: cy },
-                { x: cx, y: cy + 1 },
-                { x: cx - 1, y: cy }
-            ];
-
-            for (const n of neighbors) {
-                if (n.x >= 0 && n.x < width && n.y >= 0 && n.y < height) {
-                    const nIdx = n.y * width + n.x;
-                    // If it is NOT a Red Line, and NOT visited, we fill it.
-                    if (mask[nIdx] === 1 && visited[nIdx] === 0) {
-                        visited[nIdx] = 1;
+            const px = currIdx % width;
+            const py = Math.floor(currIdx / width);
+            for (let d = 0; d < 4; d++) {
+                const nx = px + dx4[d];
+                const ny = py + dy4[d];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    const nIdx = ny * width + nx;
+                    if (mask[nIdx] === 1 && globalVisited[nIdx] === 0) {
+                        globalVisited[nIdx] = 1;
                         queue.push(nIdx);
                     }
                 }
             }
         }
 
-        console.log(`Flood Fill complete. Found ${visitedCount} walkable pixels inside the Red Line.`);
+        const inComponent = new Uint8Array(width * height);
+        for (const idx of queue) inComponent[idx] = 1;
 
-        // 3. Moore-Neighbor Tracing on the VISITED region
-        // Find a starting edge pixel (Top-most, then Left-most of the VISITED blob)
         let boundStartX = -1;
         let boundStartY = -1;
-
-        for (let i = 0; i < width * height; i++) {
-            if (visited[i] === 1) {
-                boundStartX = i % width;
-                boundStartY = Math.floor(i / width);
+        for (const idx of queue) {
+            const px = idx % width;
+            const py = Math.floor(idx / width);
+            let onBoundary = false;
+            for (let d = 0; d < 4; d++) {
+                const nx = px + dx4[d];
+                const ny = py + dy4[d];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height || mask[ny * width + nx] !== 1) {
+                    onBoundary = true;
+                    break;
+                }
+            }
+            if (onBoundary) {
+                boundStartX = px;
+                boundStartY = py;
                 break;
             }
         }
+        if (boundStartX < 0) continue;
 
-        console.log(`Tracing boundary from ${boundStartX}, ${boundStartY}`);
-
-        const boundaryPoints: { x: number, y: number }[] = [];
+        const boundaryPoints: Point[] = [];
         let currX = boundStartX;
         let currY = boundStartY;
-        let backtrack = 6; // West
-
-        const dx = [0, 1, 1, 1, 0, -1, -1, -1];
-        const dy = [-1, -1, 0, 1, 1, 1, 0, -1];
-
+        let backtrack = 6;
         const isV = (x: number, y: number) => {
             if (x < 0 || x >= width || y < 0 || y >= height) return false;
-            return visited[y * width + x] === 1;
+            return inComponent[y * width + x] === 1;
         };
-
-        // Trace
-        let loops = 0;
-        const maxLoops = 1000000; // High limit
-
         boundaryPoints.push({ x: currX - width / 2, y: currY - height / 2 });
-
+        const maxLoops = 1000000;
+        let loops = 0;
         do {
             let foundNext = false;
             for (let i = 0; i < 8; i++) {
                 const scanIdx = (backtrack + 1 + i) % 8;
-                const nx = currX + dx[scanIdx];
-                const ny = currY + dy[scanIdx];
-
+                const nx = currX + dx8[scanIdx];
+                const ny = currY + dy8[scanIdx];
                 if (isV(nx, ny)) {
                     currX = nx;
                     currY = ny;
@@ -194,78 +129,107 @@ async function generateMapData() {
                     break;
                 }
             }
-
             if (!foundNext) break;
-
             boundaryPoints.push({ x: currX - width / 2, y: currY - height / 2 });
             loops++;
-
             if (currX === boundStartX && currY === boundStartY) break;
-
         } while (loops < maxLoops);
 
-        console.log(`Traced ${boundaryPoints.length} boundary points.`);
-
-        // 4. Simplify
-        const simplified: { x: number, y: number }[] = [];
-        if (boundaryPoints.length > 0) {
+        const simplified: Point[] = [];
+        if (boundaryPoints.length >= 3) {
             simplified.push(boundaryPoints[0]);
             let lastP = boundaryPoints[0];
-
             for (let i = 1; i < boundaryPoints.length; i++) {
                 const p = boundaryPoints[i];
-                const dist = Math.sqrt(Math.pow(p.x - lastP.x, 2) + Math.pow(p.y - lastP.y, 2));
-
+                const dist = Math.sqrt((p.x - lastP.x) ** 2 + (p.y - lastP.y) ** 2);
                 if (dist >= SIMPLIFICATION_THRESHOLD) {
                     simplified.push(p);
                     lastP = p;
                 }
             }
-            simplified.push(boundaryPoints[0]); // Closing loop
+            simplified.push(boundaryPoints[0]);
+            allPolygons.push(simplified);
         }
+    }
 
-        console.log(`Simplified to ${simplified.length} points.`);
-
-        // 5. Debug Image
-        const debugCanvas = createCanvas(width, height);
-        const dCtx = debugCanvas.getContext('2d');
-        dCtx.drawImage(image, 0, 0); // Draw original line map
-
-        // Draw Fill (Visual verification of walkability)
-        dCtx.fillStyle = 'rgba(0, 255, 0, 0.3)'; // Semi-transparent green
-        // Creating a path from the polygon
+    // 디버그 이미지 저장 (첫 번째 타일만, 모든 폴리곤 그리기)
+    const debugImagePath = path.join(debugOutDir, `map-debug-${tileIndex + 1}.png`);
+    const debugCanvas = createCanvas(width, height);
+    const dCtx = debugCanvas.getContext('2d');
+    dCtx.drawImage(image, 0, 0);
+    dCtx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+    dCtx.strokeStyle = 'blue';
+    dCtx.lineWidth = 3;
+    for (const poly of allPolygons) {
+        if (poly.length === 0) continue;
         dCtx.beginPath();
-        if (simplified.length > 0) {
-            dCtx.moveTo(simplified[0].x + width / 2, simplified[0].y + height / 2);
-            for (let i = 1; i < simplified.length; i++) {
-                dCtx.lineTo(simplified[i].x + width / 2, simplified[i].y + height / 2);
-            }
+        dCtx.moveTo(poly[0].x + width / 2, poly[0].y + height / 2);
+        for (let i = 1; i < poly.length; i++) {
+            dCtx.lineTo(poly[i].x + width / 2, poly[i].y + height / 2);
         }
         dCtx.closePath();
         dCtx.fill();
-        dCtx.strokeStyle = 'blue';
-        dCtx.lineWidth = 3;
         dCtx.stroke();
-
-        const buffer = debugCanvas.toBuffer('image/png');
-        fs.writeFileSync(debugImagePath, buffer);
-        console.log(`Debug image saved to ${debugImagePath}`);
-
-        // Save JSON
-        const mapData = {
-            width: width,
-            height: height,
-            tiles: simplified,
-            walkableTile: 'baseTile',
-            startPosition: { x: 0, y: 0 }
-        };
-
-        fs.writeFileSync(outputPath, JSON.stringify(mapData));
-        console.log(`Map data saved to ${outputPath}`);
-
-    } catch (error) {
-        console.error('Error processing map image:', error);
     }
+    fs.writeFileSync(debugImagePath, debugCanvas.toBuffer('image/png'));
+
+    return allPolygons;
+}
+
+/**
+ * 타일 로컬(중심 기준) 좌표를 월드 좌표로 변환. (단일 4048x4048 맵: 중심 = 0,0)
+ */
+function toWorldPoints(
+    points: Point[],
+    opts: { center: number }
+): Point[] {
+    return points.map((p) => ({
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+    }));
+}
+
+async function generateMapData(): Promise<void> {
+    const projectRoot = process.cwd();
+    const mapPath = getMapImagePath(projectRoot);
+    const debugDir = path.join(projectRoot, 'public/assets/chapter-1/map/debug');
+    const mapDir = path.join(projectRoot, 'public/assets/chapter-1/map');
+    const outputPath = path.join(mapDir, 'map-data.json');
+
+    if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    if (!mapPath) {
+        console.error('Map image not found. Place map.jpg in public/assets/chapter-1/map/debug/');
+        process.exit(1);
+    }
+
+    console.log(`Analyzing single map: ${mapPath}`);
+    const polygons = await processOneTile(mapPath, 0, debugDir);
+
+    const img = await loadImage(mapPath);
+    const mapWidth = img.width;
+    const mapHeight = img.height;
+    const opts = { center: mapWidth / 2 };
+
+    const allPolygons: Point[][] = [];
+    for (const polygon of polygons) {
+        if (polygon.length > 0) {
+            allPolygons.push(toWorldPoints(polygon, opts));
+        }
+    }
+
+    const mapData = {
+        width: mapWidth,
+        height: mapHeight,
+        tiles: allPolygons,
+        walkableTile: 'baseTile',
+        startPosition: { x: 0, y: 0 },
+    };
+
+    fs.writeFileSync(outputPath, JSON.stringify(mapData));
+    console.log(`Map data saved to ${outputPath} (${allPolygons.length} polygons, ${mapWidth}x${mapHeight}).`);
 }
 
 generateMapData();
