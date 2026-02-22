@@ -8,8 +8,12 @@ export class TileMap {
   private images: Map<string, HTMLImageElement> = new Map()
 
   private mapDataPolygons: { x: number, y: number }[][] = []
+  private obstaclePolygons: { x: number, y: number }[][] = []
   private mapWidth: number = 0
   private mapHeight: number = 0
+  private polygonsAreObstacles: boolean = false
+  /** 이동 스텝 그리드: map-data.json 기준 이동 가능 셀. 맵 로드 시 1회만 채움. 렌더는 캐시만 보고 그리기만 함 */
+  private stepGridWalkableCache: Set<string> | null = null
 
   constructor(config?: any) {
     this.CONFIG = config || {}
@@ -20,13 +24,15 @@ export class TileMap {
   }
 
   /**
-   * 맵 데이터 로드 (충돌 감지용 폴리곤)
-   * @param mapData 단일 폴리곤(Point[]) 또는 다중 폴리곤(Point[][])
+   * 맵 데이터 로드
+   * @param mapData tiles: 빨간(주황) 이동 가능 폴리곤
+   * @param options.obstacleTiles 녹색 이동 불가(구멍) 폴리곤
    */
   loadMapData(
     mapData: { x: number, y: number }[] | { x: number, y: number }[][],
     width: number,
-    height: number
+    height: number,
+    options?: { polygonsAreObstacles?: boolean; obstacleTiles?: { x: number; y: number }[][] }
   ): void {
     const first = mapData[0]
     const isMulti = Array.isArray(first) && first.length > 0 && typeof (first as { x?: number }[])[0] === 'object'
@@ -35,6 +41,36 @@ export class TileMap {
       : [mapData as { x: number, y: number }[]]
     this.mapWidth = width
     this.mapHeight = height
+    this.polygonsAreObstacles = options?.polygonsAreObstacles ?? false
+    this.obstaclePolygons = options?.obstacleTiles ?? []
+    this.buildStepGridCacheOnce()
+  }
+
+  /** map-data.json(tiles/obstacleTiles) 기준으로 이동 가능 셀만 1회 계산. 로드 시만 호출, 렌더에서는 캐시만 사용 */
+  /** 캐시 그리드 기준 원점 (렌더링과 동일한 정렬 보장) */
+  private stepGridOrigin: { x: number; y: number } = { x: 0, y: 0 }
+
+  private buildStepGridCacheOnce(): void {
+    const bounds = this.getWalkableBounds()
+    if (!bounds) {
+      this.stepGridWalkableCache = null
+      return
+    }
+    const cellSize = TileMap.STEP_GRID.cellSize
+    const halfCell = cellSize / 2
+    const cache = new Set<string>()
+    // 그리드 원점을 bounds.minX/minY 기준으로 고정
+    const gx0 = Math.floor(bounds.minX / cellSize) * cellSize
+    const gy0 = Math.floor(bounds.minY / cellSize) * cellSize
+    this.stepGridOrigin = { x: gx0, y: gy0 }
+    for (let gx = gx0; gx < bounds.maxX; gx += cellSize) {
+      for (let gy = gy0; gy < bounds.maxY; gy += cellSize) {
+        if (this.isWalkableAtWorld(gx + halfCell, gy + halfCell)) {
+          cache.add(`${gx},${gy}`)
+        }
+      }
+    }
+    this.stepGridWalkableCache = cache
   }
 
   /** 미니맵용 폴리곤 데이터 반환 (다중 폴리곤 지원) */
@@ -67,17 +103,45 @@ export class TileMap {
 
   /**
    * 월드 좌표가 이동 가능한지 확인
-   * 1. walkableArea 범위 체크
-   * 2. Polygon Point Detection (Ray Casting)
+   * tiles 비어 있으면: 이동 가능 = walkableArea 내 + obstacleTiles 밖
+   * tiles 있으면: 이동 가능 = walkableArea 내 + tiles 안 + obstacleTiles 밖
    */
   isWalkableAtWorld(worldX: number, worldY: number, buffer: number = 0): boolean {
-    // 1. 이동 가능 영역(Bounding Box) 체크
     if (!this.isInWalkableArea(worldX, worldY)) return false
+    if (!this.mapDataPolygons.length) {
+      if (this.isPointInAnyObstacle(worldX, worldY)) return false
+      if (buffer > 0) {
+        const offsets = [
+          { x: 0, y: -buffer },
+          { x: 0, y: buffer },
+          { x: -buffer, y: 0 },
+          { x: buffer, y: 0 }
+        ]
+        for (const offset of offsets) {
+          if (this.isPointInAnyObstacle(worldX + offset.x, worldY + offset.y)) return false
+        }
+      }
+      return true
+    }
 
-    // 2. 맵 데이터가 없으면 영역 체크만으로 충분
-    if (!this.mapDataPolygons.length) return true
+    if (this.polygonsAreObstacles) {
+      if (this.isPointInAnyObstacle(worldX, worldY)) return false
+      if (buffer > 0) {
+        const offsets = [
+          { x: 0, y: -buffer },
+          { x: 0, y: buffer },
+          { x: -buffer, y: 0 },
+          { x: buffer, y: 0 }
+        ]
+        for (const offset of offsets) {
+          if (this.isPointInAnyObstacle(worldX + offset.x, worldY + offset.y)) return false
+        }
+      }
+      return !this.isPointInAnyPolygon(worldX, worldY)
+    }
 
-    // 3. Polygon Collision Check (다중 폴리곤 중 하나라도 포함이면 이동 가능)
+    if (!this.isPointInAnyPolygon(worldX, worldY)) return false
+    if (this.isPointInAnyObstacle(worldX, worldY)) return false
     if (buffer > 0) {
       const offsets = [
         { x: 0, y: -buffer },
@@ -86,13 +150,18 @@ export class TileMap {
         { x: buffer, y: 0 }
       ]
       for (const offset of offsets) {
-        if (!this.isPointInAnyPolygon(worldX + offset.x, worldY + offset.y)) {
-          return false
-        }
+        if (!this.isPointInAnyPolygon(worldX + offset.x, worldY + offset.y)) return false
+        if (this.isPointInAnyObstacle(worldX + offset.x, worldY + offset.y)) return false
       }
-      return true
     }
-    return this.isPointInAnyPolygon(worldX, worldY)
+    return true
+  }
+
+  private isPointInAnyObstacle(x: number, y: number): boolean {
+    for (const points of this.obstaclePolygons) {
+      if (points.length >= 3 && this.rayCastPointInPolygon(x, y, points)) return true
+    }
+    return false
   }
 
   /** 다중 폴리곤 중 한 곳이라도 포함되면 true */
@@ -154,8 +223,17 @@ export class TileMap {
     // 단일 맵 모드에서는 사용하지 않음
   }
 
-  /** 턴제 RPG 스타일 이동 스텝 그리드 한 칸 크기 (Player 이동 스텝과 동일하게 128*2) */
-  private static readonly STEP_GRID_SIZE = 256
+  /**
+   * 이동 스텝 그리드. enabled=false면 그리드 미표시로 FPS 60 유지.
+   * - enabled: true로 두면 매 프레임 폴리곤 검사로 부하 증가 → 필요 시에만 true.
+   * - cellSize: 그리드 셀 한 변(월드). 클수록 셀 수 감소해 가벼움.
+   */
+  static readonly STEP_GRID = {
+    enabled: true,
+    cellSize: 24,
+    boxRatio: 0.75,
+    gap: undefined as number | undefined,
+  }
 
   /**
    * 단일 맵 이미지 렌더링
@@ -176,48 +254,56 @@ export class TileMap {
       ctx.drawImage(mapBg, drawX, drawY, screenW, screenH)
     }
 
-    this.renderMovementStepGrid(ctx, camera)
+    if (TileMap.STEP_GRID.enabled) {
+      this.renderMovementStepGrid(ctx, camera)
+    }
     this.renderEdgeShadows(ctx, camera, drawX, drawY, screenW, screenH)
   }
 
   /**
-   * 이동 가능 범위를 턴제 RPG처럼 스텝별 사각형 그리드로 표시.
-   * 네모는 셀보다 작게 그려서 이동 가능한 x,y 범위 안에만 들어가도록 함.
+   * 이동 가능 영역을 네모 박스로 표시만 함. map-data.json으로 이미 정해진 영역을 캐시에서 읽어 그리기만 하며
+   * isWalkableAtWorld 등 로직 없음 → FPS와 무관.
+   * 캐시는 로드 시 1회만 구성되며, 이후 렌더링은 캐시 조회만 수행.
    */
   private renderMovementStepGrid(ctx: CanvasRenderingContext2D, camera: Camera): void {
-    const bounds = this.getWalkableBounds()
-    if (!bounds) return
+    const cache = this.stepGridWalkableCache
+    if (cache === null || cache.size === 0) return
 
-    const step = TileMap.STEP_GRID_SIZE
+    const cfg = TileMap.STEP_GRID
+    const cellSize = cfg.cellSize
+    const boxSize = cfg.gap !== undefined ? cellSize - cfg.gap : cellSize * cfg.boxRatio
+    const inset = (cellSize - boxSize) / 2
+
     const scale = camera.scale ?? 1
-    const padding = step * 2
-    /** 그리드 셀 대비 그리기 비율 (1보다 작게 해서 경계 안쪽에만 박스 표시) */
-    const drawRatio = 0.95
-    const drawStep = step * drawRatio
-    const inset = (step - drawStep) / 2
+    // 카메라 뷰 월드 영역 계산 (camera.position은 뷰 좌상단 월드 좌표)
+    const vw = camera.width / scale
+    const vh = camera.height / scale
+    const viewLeft = camera.position.x
+    const viewTop = camera.position.y
+    const viewRight = viewLeft + vw
+    const viewBottom = viewTop + vh
 
-    const startX = Math.floor(bounds.minX / step) * step
-    const startY = Math.floor(bounds.minY / step) * step
+    // 캐시 그리드 원점(gx0, gy0)에서 정렬된 범위만 순회
+    const origin = this.stepGridOrigin
+    // 뷰 범위에 맞는 셀 인덱스 계산
+    const ixMin = Math.floor((viewLeft - origin.x) / cellSize)
+    const ixMax = Math.ceil((viewRight - origin.x) / cellSize)
+    const iyMin = Math.floor((viewTop - origin.y) / cellSize)
+    const iyMax = Math.ceil((viewBottom - origin.y) / cellSize)
 
     ctx.save()
-    ctx.fillStyle = 'rgba(64, 128, 255, 0.12)'
-    ctx.strokeStyle = 'rgba(64, 128, 255, 0.35)'
-    ctx.lineWidth = 1
+    ctx.fillStyle = 'rgba(64, 128, 255, 0.18)'
+    ctx.strokeStyle = 'rgba(64, 128, 255, 0.45)'
+    ctx.lineWidth = 0.5
 
-    for (let gx = startX; gx < bounds.maxX; gx += step) {
-      for (let gy = startY; gy < bounds.maxY; gy += step) {
-        const cellMinX = gx
-        const cellMinY = gy
-        const cellMaxX = gx + step
-        const cellMaxY = gy + step
-        if (cellMinX < bounds.minX || cellMaxX > bounds.maxX || cellMinY < bounds.minY || cellMaxY > bounds.maxY) continue
-        const cx = gx + step / 2
-        const cy = gy + step / 2
-        if (!this.isWalkableAtWorld(cx, cy)) continue
-        if (!camera.isInView(gx, gy, step, step, padding)) continue
+    for (let ix = ixMin; ix <= ixMax; ix++) {
+      for (let iy = iyMin; iy <= iyMax; iy++) {
+        const gx = origin.x + ix * cellSize
+        const gy = origin.y + iy * cellSize
+        if (!cache.has(`${gx},${gy}`)) continue
 
         const screen = camera.worldToScreen(gx + inset, gy + inset)
-        const size = drawStep * scale
+        const size = boxSize * scale
         ctx.fillRect(screen.x, screen.y, size, size)
         ctx.strokeRect(screen.x, screen.y, size, size)
       }

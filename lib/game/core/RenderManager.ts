@@ -5,21 +5,28 @@ import { ItemDrop } from '../entities/ItemDrop'
 import { TileMap } from '../systems/TileMap'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { InventoryManager } from './InventoryManager'
+import { InterfaceManager } from './InterfaceManager'
 import { MiniMap } from '../systems/MiniMap'
-import { t } from '../config/Locale'
 
 /**
  * 렌더링 관리 클래스
+ * 하단 HUD(HP바·인벤토리 아이콘)는 InterfaceManager에 위임
  */
 export class RenderManager {
     private canvas: HTMLCanvasElement
     private ctx: CanvasRenderingContext2D
     private resourceLoader: ResourceLoader
     private miniMap: MiniMap
+    readonly interfaceManager: InterfaceManager
 
     private fps: number = 0
     private frameCount: number = 0
     private fpsUpdateTime: number = 0
+
+    /** 인벤토리 아이콘 클릭 영역 — InterfaceManager를 직접 참조하거나 이 프록시 사용 */
+    get inventoryIconRect() {
+        return this.interfaceManager.inventoryIconRect
+    }
 
     constructor(canvas: HTMLCanvasElement, resourceLoader: ResourceLoader) {
         this.canvas = canvas
@@ -28,6 +35,7 @@ export class RenderManager {
         this.ctx = ctx
         this.resourceLoader = resourceLoader
         this.miniMap = new MiniMap(canvas)
+        this.interfaceManager = new InterfaceManager(canvas)
     }
 
     getMiniMap(): MiniMap {
@@ -104,9 +112,11 @@ export class RenderManager {
         // 미니맵 (인벤토리 위에도 표시)
         this.miniMap.render(this.ctx, player.position, monsters)
 
-        // HUD는 항상 최상단
+        // 하단 HUD — InterfaceManager에 위임
+        this.interfaceManager.render(this.ctx, player, this.resourceLoader)
+
+        // 디버그 정보는 항상 최상단
         this.renderDebugInfo(player, camera, gameState)
-        this.renderControls()
     }
 
     private renderDebugInfo(player: Player, camera: Camera, gameState: string): void {
@@ -124,23 +134,6 @@ export class RenderManager {
         this.ctx.fillText(`Camera: (${Math.floor(camera.position.x)}, ${Math.floor(camera.position.y)})`, 20, 70)
         this.ctx.fillText(`State: ${gameState}`, 20, 90)
         this.ctx.fillText(`Moving: ${player.isMoving ? 'Yes' : 'No'}`, 20, 110)
-        this.ctx.restore()
-    }
-
-    private renderControls(): void {
-        this.ctx.save()
-        this.ctx.textAlign = 'left'
-        this.ctx.textBaseline = 'alphabetic'
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
-        this.ctx.fillRect(10, this.canvas.height - 80, 260, 70)
-
-        this.applyTextShadow(this.ctx)
-        this.ctx.fillStyle = '#fff'
-        this.ctx.font = 'bold 14px monospace'
-        this.ctx.fillText(t('inventory.controls.title'), 20, this.canvas.height - 57)
-        this.ctx.font = '13px monospace'
-        this.ctx.fillText(t('inventory.controls.move'), 20, this.canvas.height - 38)
-        this.ctx.fillText(t('inventory.controls.pause'), 20, this.canvas.height - 18)
         this.ctx.restore()
     }
 

@@ -136,6 +136,10 @@ export interface AssetConfig {
     armor: string
     weapon: string
     window: string
+    /** HP 바 프레임 이미지 */
+    hpBar?: string
+    /** 인벤토리 아이콘 이미지 */
+    inventoryIcon?: string
 }
 
 // ============================================================================

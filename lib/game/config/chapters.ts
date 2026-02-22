@@ -128,13 +128,15 @@ export const CHAPTER_CONFIGS: Record<number, ChapterConfig> = {
 
         // 에셋 경로 설정 (맵 = 5072x5072 단일 이미지)
         assetConfig: {
-            player: '/assets/chapter-1/player/player.png',
-            fight: '/assets/chapter-1/player/fight.png',
+            player: '/assets/main/player/player.png',
+            fight: '/assets/main/player/fight.png',
             mapBackground: '/assets/chapter-1/map/map.png',
-            helmet: '/assets/chapter-1/item/helmet.png',
-            armor: '/assets/chapter-1/item/armor.png',
-            weapon: '/assets/chapter-1/item/weapon.png',
-            window: '/assets/chapter-1/player/inventory.png'
+            helmet: '/assets/main/player/item/helmet.png',
+            armor: '/assets/main/player/item/armor.png',
+            weapon: '/assets/main/player/item/weapon.png',
+            window: '/assets/main/player/inventory.png',
+            hpBar: '/assets/main/player/interface/hp.png',
+            inventoryIcon: '/assets/main/player/interface/inventory.png'
         },
 
         // 몬스터 종류별 상세 설정

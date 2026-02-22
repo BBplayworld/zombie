@@ -12,7 +12,7 @@ interface MapRect { x: number; y: number; w: number; h: number }
 export class MiniMap {
     private canvas: HTMLCanvasElement
 
-    private readonly SIZE = 210
+    private readonly SIZE = 280
     private readonly MARGIN = 15
     private readonly CORNER_R = 8
     private readonly MIN_ZOOM = 0.3

@@ -18,6 +18,10 @@ export class Player {
   public angle: number
   public hp: number = 100
   public maxHp: number = 100
+  /** 초당 HP 자동 회복량 (Spirit 파생) */
+  public hpRegen: number = 0
+  /** HP 회복 누적 타이머 */
+  private hpRegenTimer: number = 0
 
   // 능력치 및 아이템
   public stats: EntityStats = {
@@ -191,7 +195,6 @@ export class Player {
 
     // Max HP = Base 100 + Vigor * 10
     this.maxHp = 100 + this.stats.Vigor * 10
-    // Current HP healing? Maybe keep percentage? For now just clamp.
     if (this.hp > this.maxHp) this.hp = this.maxHp
 
     this.speed = Player.BASE_SPEED + this.stats.Agility * 0.08
@@ -202,17 +205,26 @@ export class Player {
     // Crit Chance = Luck * 0.01 (1%)
     this.critChance = this.stats.Luck * 0.01
 
+    // HP Regen = Spirit * 0.5 (초당 회복량)
+    this.hpRegen = this.stats.Spirit * 0.5
+
     console.log('Updated Stats:', this.stats)
-    console.log(`Derived: HP ${this.maxHp}, DMG ${this.damage}, SPD ${this.speed}, CRIT ${this.critChance.toFixed(2)}`)
+    console.log(`Derived: HP ${this.maxHp}, DMG ${this.damage}, SPD ${this.speed}, CRIT ${this.critChance.toFixed(2)}, Regen ${this.hpRegen.toFixed(1)}/s`)
   }
 
   getDamage(): { amount: number, isCrit: boolean } {
     const isCrit = Math.random() < this.critChance
     const multiplier = isCrit ? 2.0 : 1.0
-    // Random variance +/- 10%
     const variance = (Math.random() * 0.2) + 0.9
     const amount = Math.floor(this.damage * multiplier * variance)
     return { amount, isCrit }
+  }
+
+  /**
+   * 몬스터 반격 등 외부 데미지 수신
+   */
+  takeDamage(amount: number): void {
+    this.hp = Math.max(0, this.hp - amount)
   }
 
   /**
@@ -294,6 +306,14 @@ export class Player {
       this.attackVisualTimer -= deltaTime
     }
 
+    // HP 자동 회복 (전투 중 제외)
+    if (!this.isAttacking && this.hpRegen > 0 && this.hp < this.maxHp) {
+      this.hpRegenTimer += deltaTime
+      // 1초마다 회복 (또는 누적량이 1 이상이면 즉시)
+      const regenAmount = this.hpRegen * deltaTime
+      this.hp = Math.min(this.maxHp, this.hp + regenAmount)
+    }
+
     if (this.isAttacking) {
       this.spriteAnimation.update(deltaTime)
       return
@@ -302,49 +322,36 @@ export class Player {
     if (this.tileMap) {
       const config = getChapterConfig(1)
       const offset = config.gameplayConfig.collisionYOffset
+      const walkableArea = config.openWorldMapConfig?.walkableArea
+      const BOUNDARY_MARGIN = 50
 
-      if (this.moveTarget) {
-        const dx = this.moveTarget.x - this.position.x
-        const dy = this.moveTarget.y - this.position.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const moveBy = Math.min(this.speed * deltaTime, dist)
-
-        if (dist <= Player.ARRIVAL_DISTANCE) {
-          this.position.x = this.moveTarget.x
-          this.position.y = this.moveTarget.y
-          this.moveTarget = null
-        } else if (moveBy > 0) {
-          this.position.x += (dx / dist) * moveBy
-          this.position.y += (dy / dist) * moveBy
+      const vx = this.velocity.x * deltaTime
+      const vy = this.velocity.y * deltaTime
+      if (vx !== 0 || vy !== 0) {
+        const nextX = this.position.x + vx
+        const nextY = this.position.y + vy
+        if (this.tileMap.isWalkableAtWorld(nextX, nextY + offset, 0)) {
+          this.position.x = nextX
+          this.position.y = nextY
+        } else if (this.tileMap.isWalkableAtWorld(nextX, this.position.y + offset, 0)) {
+          this.position.x = nextX
+        } else if (this.tileMap.isWalkableAtWorld(this.position.x, nextY + offset, 0)) {
+          this.position.y = nextY
         }
+      }
 
-        const walkableArea = config.openWorldMapConfig.walkableArea
-        if (walkableArea) {
-          const BOUNDARY_MARGIN = 50
-          if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) this.position.x = walkableArea.minX + BOUNDARY_MARGIN
-          if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
-          if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) this.position.y = walkableArea.minY + BOUNDARY_MARGIN
-          if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
-        }
+      if (walkableArea) {
+        if (this.position.x < walkableArea.minX + BOUNDARY_MARGIN) this.position.x = walkableArea.minX + BOUNDARY_MARGIN
+        if (this.position.x > walkableArea.maxX - BOUNDARY_MARGIN) this.position.x = walkableArea.maxX - BOUNDARY_MARGIN
+        if (this.position.y < walkableArea.minY + BOUNDARY_MARGIN) this.position.y = walkableArea.minY + BOUNDARY_MARGIN
+        if (this.position.y > walkableArea.maxY - BOUNDARY_MARGIN) this.position.y = walkableArea.maxY - BOUNDARY_MARGIN
       }
     } else {
-      if (this.moveTarget) {
-        const dx = this.moveTarget.x - this.position.x
-        const dy = this.moveTarget.y - this.position.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const moveBy = Math.min(this.speed * deltaTime, dist)
-        if (dist <= Player.ARRIVAL_DISTANCE) {
-          this.position.x = this.moveTarget.x
-          this.position.y = this.moveTarget.y
-          this.moveTarget = null
-        } else if (moveBy > 0) {
-          this.position.x += (dx / dist) * moveBy
-          this.position.y += (dy / dist) * moveBy
-        }
-      }
+      this.position.x += this.velocity.x * deltaTime
+      this.position.y += this.velocity.y * deltaTime
     }
 
-    this.isMoving = this.moveTarget != null
+    this.isMoving = this.velocity.x !== 0 || this.velocity.y !== 0
     if (this.isMoving) {
       this.spriteAnimation.play(`walk_${this.direction}`)
     } else {
@@ -354,13 +361,10 @@ export class Player {
   }
 
   /**
-   * 플레이어 이동 처리
+   * 플레이어 이동 처리. 속도 기반으로 매 프레임 입력을 그대로 반영해 상하·대각선이 부드럽게 동작.
    */
   move(moveX: number, moveY: number): void {
-    const config = getChapterConfig(1)
-
     if (moveX === 0 && moveY === 0) {
-      this.isMoving = false
       this.velocity.x = 0
       this.velocity.y = 0
       this.moveTarget = null
@@ -372,15 +376,6 @@ export class Player {
     const dirX = moveX / magnitude
     const dirY = moveY / magnitude
 
-    // 매 프레임 현재 위치 기준으로 목표 갱신 → 대각선/방향 전환이 즉시 반영되어 답답함 해소
-    const stepSize = this.width * Player.STEP_SIZE_MULTIPLIER
-    const targetX = this.position.x + stepSize * dirX
-    const targetY = this.position.y + stepSize * dirY
-    const offset = config.gameplayConfig.collisionYOffset
-    if (!this.tileMap?.isWalkableAtWorld(targetX, targetY + offset, 0)) return
-
-    this.moveTarget = new Vector2(targetX, targetY)
-    this.isMoving = true
     this.velocity.x = dirX * this.speed
     this.velocity.y = dirY * this.speed
     this.angle = Math.atan2(dirY, dirX)

@@ -4,16 +4,19 @@ import { TileMap } from '../systems/TileMap'
 import { InputManager } from '../systems/InputManager'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { MonsterManager } from './MonsterManager'
+import { PlayerManager } from './PlayerManager'
 import { RenderManager } from './RenderManager'
 import { ItemDrop } from '../entities/ItemDrop'
 import { Item } from '../entities/Item'
 import { getChapterConfig } from '../config/chapters'
 import { InventoryManager } from './InventoryManager'
-import { t } from '../config/Locale'
 
 /**
  * 게임 엔진 클래스
- * 게임의 핵심 시스템을 통합 관리하고 게임 루프를 실행
+ *
+ * 책임: 시스템 초기화·조율 + 게임 루프 실행
+ * 플레이어 로직 → PlayerManager
+ * 몬스터 로직 → MonsterManager
  */
 export class GameEngine {
   // Canvas & Context
@@ -22,15 +25,18 @@ export class GameEngine {
 
   // Core Systems
   private camera: Camera
-  private player: Player
   private tileMap: TileMap
   private inputManager: InputManager
   public resourceLoader: ResourceLoader
 
   // Managers
+  private playerManager: PlayerManager
   private monsterManager: MonsterManager
   private renderManager: RenderManager
   private inventoryManager: InventoryManager
+
+  // 편의 접근자 (RenderManager → player 접근이 필요한 곳에서 사용)
+  private get player(): Player { return this.playerManager.player }
 
   // Entities
   private items: ItemDrop[] = []
@@ -46,68 +52,84 @@ export class GameEngine {
   // Configuration
   private currentChapter: number = 1
 
-  /**
-   * STEP 1: 생성자 - 기본 시스템 초기화
-   */
+  // ─────────────────────────────────────────────────────
+  //  STEP 1: 생성자 — 기본 시스템 초기화
+  // ─────────────────────────────────────────────────────
+
   constructor(canvas: HTMLCanvasElement) {
     console.log('🎮 [STEP 1] GameEngine Constructor - Initializing core systems...')
 
     this.canvas = canvas
     this.ctx = this.initializeContext(canvas)
-    this.setupZoomPrevention()
 
     const chapterConfig = getChapterConfig(this.currentChapter)
 
-    // 시스템 초기화
+    // 코어 시스템
     this.camera = new Camera(canvas.width, canvas.height)
     this.tileMap = new TileMap(chapterConfig.openWorldMapConfig)
-    this.player = this.createPlayer(chapterConfig)
-    this.inputManager = this.setupInputManager()
     this.resourceLoader = new ResourceLoader()
 
+    // 플레이어 생성
+    const player = this.createPlayer(chapterConfig)
+
     // 매니저 초기화
-    this.monsterManager = new MonsterManager(this.tileMap, this.resourceLoader)
     this.renderManager = new RenderManager(canvas, this.resourceLoader)
-    this.inventoryManager = new InventoryManager(this.player, canvas)
+    this.inventoryManager = new InventoryManager(player, canvas)
+    this.monsterManager = new MonsterManager(this.tileMap, this.resourceLoader)
+    this.playerManager = new PlayerManager(
+      player,
+      this.tileMap,
+      this.resourceLoader,
+      this.inventoryManager,
+      this.renderManager.interfaceManager,
+      canvas
+    )
+
+    // 입력 설정 (playerManager 생성 후)
+    this.inputManager = this.setupInputManager()
+
+    this.setupWindowEvents()
 
     console.log('✅ [STEP 1] Core systems initialized')
   }
 
-  /**
-   * STEP 2: 리소스 로딩 - 게임 에셋 로드
-   */
+  // ─────────────────────────────────────────────────────
+  //  STEP 2: 리소스 로딩
+  // ─────────────────────────────────────────────────────
+
   async loadResources(): Promise<void> {
     console.log('📦 [STEP 2] Loading game resources...')
     this.state = 'loading'
 
     const chapterConfig = getChapterConfig(this.currentChapter)
 
-    // 2-1. 이미지 리소스 로드
     await this.loadImageResources(chapterConfig)
-
-    // 2-2. 맵 데이터 로드
     await this.loadMapData(chapterConfig)
 
-    // 2-3. 플레이어 초기화
-    this.initializePlayer()
+    // 플레이어 스프라이트 연결
+    this.playerManager.initialize()
 
-    // 2-4. 몬스터 초기 스폰
+    // 몬스터 스폰 + fight 스프라이트 연결
     this.monsterManager.spawnInitialMonsters(chapterConfig, this.player.position)
+    const fightImg = this.resourceLoader.getImage('fight')
+    if (fightImg) {
+      this.monsterManager.monsters.forEach(m => m.setFightImage(fightImg))
+    }
 
-    // 2-5. 게임 준비 완료
     this.finalizeGameSetup(chapterConfig)
 
     console.log('✅ [STEP 2] All resources loaded, game ready!')
   }
 
-  /**
-   * STEP 3: 게임 시작 - 게임 루프 실행
-   */
+  // ─────────────────────────────────────────────────────
+  //  STEP 3: 게임 시작
+  // ─────────────────────────────────────────────────────
+
   start(): void {
     console.log('🚀 [STEP 3] Starting game loop...')
 
     if (this.state !== 'ready') {
-      console.warn('⚠️ Game is not ready to start. Current state:', this.state)
+      console.warn('⚠️ Game is not ready. Current state:', this.state)
       return
     }
 
@@ -118,48 +140,41 @@ export class GameEngine {
     console.log('✅ [STEP 3] Game loop started!')
   }
 
-  // ==================== STEP 2 상세 함수들 ====================
+  // ─────────────────────────────────────────────────────
+  //  STEP 2 상세
+  // ─────────────────────────────────────────────────────
 
-  /**
-   * STEP 2-1: 이미지 리소스 로드
-   */
   private async loadImageResources(chapterConfig: any): Promise<void> {
     console.log('  📸 [STEP 2-1] Loading images...')
 
     const imageMap: Record<string, string> = { ...chapterConfig.assetConfig }
-
-    // 몬스터 이미지 추가
-    chapterConfig.monsters.forEach((m: any) => {
-      imageMap[m.id] = m.imagePath
-    })
+    chapterConfig.monsters.forEach((m: any) => { imageMap[m.id] = m.imagePath })
 
     await this.resourceLoader.loadImages(imageMap)
-
     this.tileMap.setImages(this.resourceLoader.getImages())
 
     console.log('  ✅ [STEP 2-1] Images loaded')
   }
 
-  /**
-   * STEP 2-2: 맵 데이터 로드
-   */
   private async loadMapData(chapterConfig: any): Promise<void> {
     console.log('  🗺️  [STEP 2-2] Loading map data...')
 
     try {
-      const response = await fetch('/assets/chapter-1/map/map-data.json')
-      if (!response.ok) throw new Error('Map json not found')
-
-      const jsonMap = await response.json()
+      const res = await fetch('/assets/chapter-1/map/map-data.json')
+      if (!res.ok) throw new Error('Map json not found')
+      const jsonMap = await res.json()
       console.log('  📄 External map data loaded:', jsonMap.width, 'x', jsonMap.height)
-
-      this.tileMap.loadMapData(jsonMap.tiles, jsonMap.width, jsonMap.height)
-    } catch (e) {
+      this.tileMap.loadMapData(jsonMap.tiles, jsonMap.width, jsonMap.height, {
+        polygonsAreObstacles: !!jsonMap.polygonsAreObstacles,
+        obstacleTiles: jsonMap.obstacleTiles ?? []
+      })
+    } catch {
       console.warn('  ⚠️ Using default config map data')
       const md = chapterConfig.mapData
       this.tileMap.loadMapData(md.tiles, md.width, md.height)
     }
 
+    // 미니맵 설정
     const miniMap = this.renderManager.getMiniMap()
     const polygon = this.tileMap.getMapPolygon()
     const bounds = this.tileMap.getWalkableBounds()
@@ -172,10 +187,9 @@ export class GameEngine {
 
     const worldSize = chapterConfig.openWorldMapConfig?.worldSize
     const mapImg = this.resourceLoader.getImage('mapBackground')
-    if (mapImg && worldSize) {
-      miniMap.setMapImage(mapImg, worldSize.width, worldSize.height)
-    }
+    if (mapImg && worldSize) miniMap.setMapImage(mapImg, worldSize.width, worldSize.height)
 
+    // 오픈월드: 랜덤 시작 위치
     if (chapterConfig.openWorldMapConfig) {
       const startPos = this.tileMap.getRandomWalkablePosition()
       if (startPos) {
@@ -187,138 +201,68 @@ export class GameEngine {
     console.log('  ✅ [STEP 2-2] Map data loaded')
   }
 
-  /**
-   * STEP 2-3: 플레이어 초기화
-   */
-  private initializePlayer(): void {
-    console.log('  🏃 [STEP 2-3] Initializing player...')
-
-    this.player.setTileMap(this.tileMap)
-
-    const playerSprite = this.resourceLoader.getImage('player')
-    if (playerSprite) this.player.setSpriteImage(playerSprite)
-
-    const fightSprite = this.resourceLoader.getImage('fight')
-    if (fightSprite) this.player.setFightImage(fightSprite)
-
-    const helmetSprite = this.resourceLoader.getImage('helmet')
-    if (helmetSprite) this.player.setHelmetImage(helmetSprite)
-
-    console.log('  ✅ [STEP 2-3] Player initialized')
-  }
-
-  /**
-   * STEP 2-5: 게임 설정 완료
-   */
   private finalizeGameSetup(chapterConfig: any): void {
     console.log('  🎯 [STEP 2-5] Finalizing game setup...')
-
     this.state = 'ready'
-
     this.camera.setScaleToViewSize()
     this.camera.follow(this.player.position, true)
     this.tileMap.updateVisibleTiles(this.camera)
     this.player.update(0)
-    // First render to show game is ready
     this.renderManager.render(
-      this.tileMap,
-      this.camera,
-      this.player,
-      this.monsterManager.monsters,
-      this.items, // add items
-      this.state,
-      this.inventoryManager
+      this.tileMap, this.camera, this.player,
+      this.monsterManager.monsters, this.items,
+      this.state, this.inventoryManager
     )
-
     console.log('  ✅ [STEP 2-5] Game setup complete')
     console.log(`  📖 Chapter ${this.currentChapter}: ${chapterConfig.name}`)
-    console.log(`  📐 Map size: ${chapterConfig.mapData.width}x${chapterConfig.mapData.height}`)
   }
 
-  // ==================== 게임 루프 ====================
+  // ─────────────────────────────────────────────────────
+  //  게임 루프
+  // ─────────────────────────────────────────────────────
 
-  /**
-   * 게임 루프 - 매 프레임 실행
-   */
   private gameLoop = (currentTime: number): void => {
     if (this.state !== 'playing') return
 
-    // Delta time 계산
     this.deltaTime = (currentTime - this.lastFrameTime) / 1000
     this.lastFrameTime = currentTime
 
-    // FPS 계산
     this.renderManager.updateFPS(currentTime)
-
-    // 업데이트 & 렌더링
     this.update(currentTime)
     this.renderManager.render(
-      this.tileMap,
-      this.camera,
-      this.player,
-      this.monsterManager.monsters,
-      this.items, // add items
-      this.state,
-      this.inventoryManager
+      this.tileMap, this.camera, this.player,
+      this.monsterManager.monsters, this.items,
+      this.state, this.inventoryManager
     )
 
     requestAnimationFrame(this.gameLoop)
   }
 
-  /**
-   * 게임 상태 업데이트
-   */
   private update(currentTime: number): void {
-    // 입력 처리
-    const input = this.inputManager.getMovementInput()
-    this.player.move(input.x, input.y)
+    // ── 플레이어 업데이트 (PlayerManager 위임) ───────
+    this.items = this.playerManager.update(
+      this.deltaTime,
+      this.inputManager,
+      this.items,
+      this.monsterManager.monsters
+    )
 
-    // 플레이어 업데이트
-    this.player.update(this.deltaTime)
+    // 아이템 물리 업데이트
+    this.items.forEach(item => item.update(this.deltaTime))
 
-    // Inventory Hover Check (Tooltip + Cursor)
-    if (this.player.isInventoryOpen) {
-      this.inventoryManager.handleHover(this.inputManager)
-    } else {
-      this.canvas.style.cursor = 'default'
-      this.player.hoveredItem = null
-    }
-
-    // 몬스터 관리
+    // ── 몬스터 업데이트 (MonsterManager 위임) ────────
     const config = getChapterConfig(this.currentChapter)
 
-    // 1. 죽은 몬스터 처리 및 아이템 드랍
     const deadMonsters = this.monsterManager.removeDeadMonsters()
     deadMonsters.forEach(m => {
-      // 아이템 생성 (확률은 내부 config에서 처리)
-      const item = Item.createRandom(m.position.x, m.position.y)
-      if (item) {
-        this.items.push(item.drop(m.position.x, m.position.y))
-      }
+      const dropped = Item.createRandom(m.position.x, m.position.y)
+      if (dropped) this.items.push(dropped.drop(m.position.x, m.position.y))
     })
 
     this.monsterManager.updateAll(this.deltaTime)
     this.monsterManager.handleRespawn(config, this.player.position, currentTime)
 
-    // 아이템 업데이트 및 획득 처리
-    this.items.forEach(item => item.update(this.deltaTime))
-
-    // 아이템 획득 거리 체크 (플레이어와 거리 50px 이내)
-    this.items = this.items.filter(item => {
-      const dx = this.player.position.x - item.position.x
-      const dy = this.player.position.y - item.position.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-
-      if (dist < 50) {
-        console.log(`Item collected: ${item.data.name} (${item.data.rarity})`)
-        this.player.addItem(item.data)
-        item.isCollected = true
-        return false // Remove from list
-      }
-      return true
-    })
-
-    // Player-Monster Collision (Block/Return)
+    // 몬스터-플레이어 충돌 밀어내기
     this.monsterManager.monsters.forEach(monster => {
       monster.checkPlayerCollision(this.player.position.x, this.player.position.y)
       this.monsterManager.monsters.forEach(other => {
@@ -326,59 +270,40 @@ export class GameEngine {
       })
     })
 
-    // 카메라 업데이트
+    // ── 카메라 & 타일맵 ───────────────────────────────
     this.camera.follow(this.player.position)
     this.tileMap.updateVisibleTiles(this.camera)
   }
 
-  private handlePlayerAttack(): void {
-    const ATTACK_RANGE = 250 // 공격 범위
+  // ─────────────────────────────────────────────────────
+  //  헬퍼 / 이벤트 설정
+  // ─────────────────────────────────────────────────────
 
-    this.monsterManager.monsters.forEach(monster => {
-      if (monster.isDead) return
-
-      const dx = monster.position.x - this.player.position.x
-      const dy = monster.position.y - this.player.position.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-
-      if (dist <= ATTACK_RANGE) {
-        const { amount, isCrit } = this.player.getDamage()
-        monster.takeDamage(amount)
-
-        const pushPower = 50 + (isCrit ? 30 : 0)
-        monster.pushFrom(this.player.position.x, this.player.position.y, pushPower)
-
-        const hitType = isCrit ? 'CRITICAL HIT!' : 'Hit'
-        console.log(`${hitType} monster ${monster.id}! Damage: ${amount}, HP: ${monster.hp}`)
-      }
-    })
-  }
-
-  // ==================== 헬퍼 함수들 ====================
-
-  /**
-   * Canvas Context 초기화
-   */
   private initializeContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Failed to get 2D context')
     return ctx
   }
 
-  /**
-   * 줌 방지 설정 + 미니맵 이벤트 등록
-   */
-  private setupZoomPrevention(): void {
+  private createPlayer(chapterConfig: any): Player {
+    if (chapterConfig.openWorldMapConfig) return new Player(0, 0)
+    const startPos = this.tileMap.getWorldPosition(
+      chapterConfig.mapData.startPosition.x,
+      chapterConfig.mapData.startPosition.y
+    )
+    return new Player(startPos.x, startPos.y)
+  }
+
+  /** 브라우저 전역 이벤트 (줌방지 / 미니맵 / mousemove hover) */
+  private setupWindowEvents(): void {
     window.addEventListener('wheel', (e) => {
       if (e.ctrlKey) { e.preventDefault(); return }
-      // 미니맵 휠 줌
       this.renderManager?.getMiniMap()?.handleWheel(e)
     }, { passive: false })
 
     window.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+      if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0'))
         e.preventDefault()
-      }
     })
 
     this.canvas.addEventListener('mousedown', (e) => {
@@ -387,6 +312,7 @@ export class GameEngine {
 
     window.addEventListener('mousemove', (e) => {
       this.renderManager?.getMiniMap()?.handleMouseMove(e)
+      // 인벤토리 닫힌 상태의 아이콘 hover는 PlayerManager.update() → handleCursor() 에서 처리
     })
 
     window.addEventListener('mouseup', () => {
@@ -394,65 +320,52 @@ export class GameEngine {
     })
   }
 
-  /**
-   * 플레이어 생성
-   */
-  private createPlayer(chapterConfig: any): Player {
-    if (chapterConfig.openWorldMapConfig) {
-      return new Player(0, 0)
-    }
-
-    const startPos = this.tileMap.getWorldPosition(
-      chapterConfig.mapData.startPosition.x,
-      chapterConfig.mapData.startPosition.y
-    )
-    return new Player(startPos.x, startPos.y)
-  }
-
-  /**
-   * 입력 매니저 설정
-   */
+  /** 키보드 + 마우스 클릭 입력 등록 */
   private setupInputManager(): InputManager {
     const inputManager = new InputManager()
 
+    // 공격 (Space)
     inputManager.onKeyDown('Space', () => {
       if (this.state === 'playing') {
-        this.player.attack()
-        this.handlePlayerAttack()
+        this.playerManager.handleAttack(this.monsterManager.monsters)
       }
     })
 
+    // 인벤토리 토글 (I)
     inputManager.onKeyDown('KeyI', () => {
       if (this.state === 'playing') {
-        this.player.toggleInventory()
-
-        // Reset hover and cursor when toggling
-        this.player.hoveredItem = null
-        this.canvas.style.cursor = 'default'
-
-        // Reset menu on open
-        if (this.player.isInventoryOpen) {
-          this.player.inventoryMenu = null
-        }
+        this.playerManager.toggleInventory()
       }
     })
 
+    // 마우스 클릭
     inputManager.onMouseDown((e: MouseEvent) => {
-      // Delegate to Inventory Manager if open
+      // 인벤토리 아이콘 클릭 체크
+      const iconRect = this.renderManager?.inventoryIconRect
+      if (iconRect && this.state === 'playing') {
+        const rect = this.canvas.getBoundingClientRect()
+        const mx = e.clientX - rect.left
+        const my = e.clientY - rect.top
+        if (mx >= iconRect.x && mx <= iconRect.x + iconRect.w &&
+          my >= iconRect.y && my <= iconRect.y + iconRect.h) {
+          this.playerManager.toggleInventory()
+          return
+        }
+      }
+
+      // 인벤토리 열려있으면 내부 클릭 처리
       if (this.player.isInventoryOpen) {
         const handled = this.inventoryManager.handleClick(e)
         if (handled) return
       }
-
-      // If not handled by inventory (e.g. clicked outside or inventory closed),
-      // we might handle movement here. 
-      // Current system uses Keyboard for movement, so nothing else here.
     })
 
     return inputManager
   }
 
-  // ==================== 공개 API ====================
+  // ─────────────────────────────────────────────────────
+  //  공개 API
+  // ─────────────────────────────────────────────────────
 
   resize(width: number, height: number): void {
     this.canvas.width = width
@@ -462,9 +375,7 @@ export class GameEngine {
   }
 
   pause(): void {
-    if (this.state === 'playing') {
-      this.state = 'paused'
-    }
+    if (this.state === 'playing') this.state = 'paused'
   }
 
   resume(): void {
@@ -475,11 +386,8 @@ export class GameEngine {
     }
   }
 
-  /** 일시정지 → 타이틀(게임 처음) 복귀 시 상태만 ready로 변경. 루프는 pause()로 이미 정지된 상태. */
   resetToTitle(): void {
-    if (this.state === 'paused') {
-      this.state = 'ready'
-    }
+    if (this.state === 'paused') this.state = 'ready'
   }
 
   destroy(): void {
