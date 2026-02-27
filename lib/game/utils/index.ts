@@ -42,7 +42,6 @@ export {
 // 애니메이션 유틸리티
 export {
     setupBasicAnimations,
-    setupFightAnimations,
     playStateAnimation,
     playAttackAnimation
 } from './animation'

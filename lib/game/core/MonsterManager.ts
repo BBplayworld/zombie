@@ -1,5 +1,5 @@
 import { Monster } from '../entities/Monster'
-import { TileMap } from '../systems/TileMap'
+import { ZoneMap } from '../systems/ZoneMap'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { Vector2 } from '../utils/math'
 
@@ -9,13 +9,13 @@ import { Vector2 } from '../utils/math'
  */
 export class MonsterManager {
     public monsters: Monster[] = []
-    private tileMap: TileMap
+    private ZoneMap: ZoneMap
     private resourceLoader: ResourceLoader
     private initialSpawnComplete: boolean = false
     private lastRegenCheckTime: number = 0
 
-    constructor(tileMap: TileMap, resourceLoader: ResourceLoader) {
-        this.tileMap = tileMap
+    constructor(ZoneMap: ZoneMap, resourceLoader: ResourceLoader) {
+        this.ZoneMap = ZoneMap
         this.resourceLoader = resourceLoader
     }
 
@@ -72,8 +72,8 @@ export class MonsterManager {
     /**
      * 모든 몬스터 업데이트
      */
-    updateAll(deltaTime: number): void {
-        this.monsters.forEach(monster => monster.update(deltaTime))
+    updateAll(deltaTime: number, playerPosition?: Vector2): void {
+        this.monsters.forEach(monster => monster.update(deltaTime, playerPosition))
     }
 
     /**
@@ -110,7 +110,7 @@ export class MonsterManager {
      */
     private generateSpawnPosition(config: any, margin: number): { x: number; y: number } | null {
         // walkableArea 우선, 없으면 mapBoundary 사용 (하위 호환)
-        const mapConfig = config.openWorldMapConfig || config.tileMapConfig
+        const mapConfig = config.openWorldMapConfig || config.ZoneMapConfig
         if (!mapConfig) return this.generateGridSpawnPosition(config.mapData)
 
         const area = mapConfig.walkableArea || mapConfig.mapBoundary
@@ -143,7 +143,7 @@ export class MonsterManager {
     private generateGridSpawnPosition(mapData: any): { x: number; y: number } {
         const gx = Math.floor(Math.random() * mapData.width)
         const gy = Math.floor(Math.random() * mapData.height)
-        return this.tileMap.gridToWorld(gx, gy)
+        return this.ZoneMap.gridToWorld(gx, gy)
     }
 
     /**
@@ -154,7 +154,7 @@ export class MonsterManager {
         const offset = config.gameplayConfig?.collisionYOffset || 80
 
         // 이동가능 영역 안쪽으로 SPAWN_WALKABLE_BUFFER만큼 여유 있어야 함 (끼임 방지)
-        if (!this.tileMap.isWalkableAtWorld(x, y + offset, MonsterManager.SPAWN_WALKABLE_BUFFER)) return false
+        if (!this.ZoneMap.isWalkableAtWorld(x, y + offset, MonsterManager.SPAWN_WALKABLE_BUFFER)) return false
 
         // 플레이어와의 거리 확인
         const distToPlayer = Math.sqrt(
@@ -175,7 +175,7 @@ export class MonsterManager {
         const mConfig = monsterConfigs[Math.floor(Math.random() * monsterConfigs.length)]
         const uniqueId = `mon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         const monster = new Monster(uniqueId, x, y, mConfig)
-        monster.setTileMap(this.tileMap)
+        monster.setZoneMap(this.ZoneMap)
 
         const monsterImage = this.resourceLoader.getImage(mConfig.id)
         if (monsterImage) monster.setSpriteImage(monsterImage)

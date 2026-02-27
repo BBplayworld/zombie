@@ -76,11 +76,11 @@ export class InputManager {
         let x = 0
         let y = 0
 
-        // 상하좌우 입력
-        if (this.isAnyKeyPressed('KeyW', 'ArrowUp')) y -= 1
-        if (this.isAnyKeyPressed('KeyS', 'ArrowDown')) y += 1
-        if (this.isAnyKeyPressed('KeyA', 'ArrowLeft')) x -= 1
-        if (this.isAnyKeyPressed('KeyD', 'ArrowRight')) x += 1
+        // 상하좌우 입력 (Arrow keys only)
+        if (this.isAnyKeyPressed('ArrowUp')) y -= 1
+        if (this.isAnyKeyPressed('ArrowDown')) y += 1
+        if (this.isAnyKeyPressed('ArrowLeft')) x -= 1
+        if (this.isAnyKeyPressed('ArrowRight')) x += 1
 
         return { x, y }
     }

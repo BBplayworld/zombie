@@ -86,7 +86,7 @@ zombie/
 │       ├── useGameEngine.ts      # 메인 게임 엔진
 │       ├── usePlayer.ts          # 플레이어 클래스
 │       ├── useMonster.ts         # 몬스터 클래스
-│       ├── useTileMap.ts         # 타일맵 시스템
+│       ├── useZoneMap.ts         # 타일맵 시스템
 │       ├── useCamera.ts          # 카메라 시스템
 │       ├── useInputManager.ts    # 입력 처리
 │       ├── useResourceLoader.ts  # 리소스 로더

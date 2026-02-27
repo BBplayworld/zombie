@@ -1,8 +1,10 @@
-import { Player } from '../entities/Player'
-import { ResourceLoader } from '../systems/ResourceLoader'
+import { Player } from '../entities/player/Player';
+import { ResourceLoader } from "../systems/ResourceLoader";
 
 /**
  * 게임 하단 인터페이스 관리자
+ *
+ * HP바와 인벤토리 아이콘을 zone 맵 이미지 하단에 배치.
  *
  * 렌더 순서 (z-order):
  *   [1] hp.png → globalAlpha 0.85 배경 이미지 (z 하위)
@@ -11,31 +13,31 @@ import { ResourceLoader } from '../systems/ResourceLoader'
  *   [4] 수치 텍스트
  */
 export class InterfaceManager {
-    private canvas: HTMLCanvasElement
+    private canvas: HTMLCanvasElement;
 
-    // ── HP 바 레이아웃 ─────────────────────────────────────
     private static readonly HP_FRAME = {
-        w: 140,
-        h: 300,
-        marginLeft: 96,
-        marginBottom: 52,
-        padX: 0.26,   // 좌우 각각 26 %
-        padTop: 0.13,   // 상단    13 %
-        padBot: 0.10,   // 하단    10 %
-    }
+        w: 300,
+        h: 25,
+        /** 맵 하단에서 위쪽 여백 (px) */
+        marginBottom: 28,
+        /** 맵 중앙에서 왼쪽 오프셋 (HP바 오른쪽 끝 기준) */
+        offsetLeft: 60,
+    };
 
-    // ── 인벤토리 아이콘 ───────────────────────────────────
-    private static readonly INV_ICON = {
-        size: 128,
-        offsetFromCenter: 400,   // 화면 중앙에서 오른쪽 오프셋
-        marginBottom: 52,
-    }
+    private static readonly SKILL_ICONS = {
+        size: 52,
+        gap: 8,
+        /** 맵 중앙에서 오른쪽 오프셋 (첫 번째 아이콘 왼쪽 끝 기준) */
+        offsetRight: 20,
+        /** 맵 하단에서 위쪽 여백 (px) */
+        marginBottom: 14,
+    };
 
-    /** 인벤토리 아이콘 히트 영역 */
-    public inventoryIconRect: { x: number; y: number; w: number; h: number } | null = null
+    /** 스킬 아이콘 히트 영역 (필요에 따라 툴팁이나 클릭 처리 유지) */
+    public skillIconRects: Record<string, { x: number; y: number; w: number; h: number }> = {};
 
     constructor(canvas: HTMLCanvasElement) {
-        this.canvas = canvas
+        this.canvas = canvas;
     }
 
     /**
@@ -43,145 +45,97 @@ export class InterfaceManager {
      * @returns true 이면 아이콘 위에 있음
      */
     handleHover(mouseX: number, mouseY: number): boolean {
-        if (!this.inventoryIconRect) {
-            this.canvas.style.cursor = 'default'
-            return false
+        let over = false;
+        for (const key in this.skillIconRects) {
+            const r = this.skillIconRects[key];
+            if (mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
+                over = true;
+                break;
+            }
         }
-        const r = this.inventoryIconRect
-        const over = mouseX >= r.x && mouseX <= r.x + r.w &&
-            mouseY >= r.y && mouseY <= r.y + r.h
-        this.canvas.style.cursor = over ? 'pointer' : 'default'
-        return over
+        this.canvas.style.cursor = over ? "pointer" : "default";
+        return over;
     }
 
-    /** 하단 HUD 전체 렌더링 */
-    render(ctx: CanvasRenderingContext2D, player: Player, resourceLoader: ResourceLoader): void {
-        this.renderHPBar(ctx, player, resourceLoader)
-        this.renderInventoryIcon(ctx, resourceLoader)
+    /**
+     * 하단 HUD 전체 렌더링
+     * @param mapRect 맵 이미지의 스크린 좌표. null이면 캔버스 전체 기준 사용.
+     */
+    render(
+        ctx: CanvasRenderingContext2D,
+        player: Player,
+        resourceLoader: ResourceLoader,
+        mapRect?: { x: number; y: number; w: number; h: number }
+    ): void {
+        this.renderHPBar(ctx, player, resourceLoader, mapRect);
+        this.renderSkillIcons(ctx, player, resourceLoader, mapRect);
     }
 
     // ─────────────────────────────────────────────────────
     //  HP 바
     // ─────────────────────────────────────────────────────
 
-    private renderHPBar(ctx: CanvasRenderingContext2D, player: Player, resourceLoader: ResourceLoader): void {
-        const ch = this.canvas.height
-        const cfg = InterfaceManager.HP_FRAME
+    private renderHPBar(
+        ctx: CanvasRenderingContext2D,
+        player: Player,
+        resourceLoader: ResourceLoader,
+        mapRect?: { x: number; y: number; w: number; h: number }
+    ): void {
+        const cfg = InterfaceManager.HP_FRAME;
 
-        const barX = cfg.marginLeft
-        const barY = ch - cfg.marginBottom - cfg.h
-        const barW = cfg.w
-        const barH = cfg.h
+        // 맵 영역 가져오기 (fallback: 캔버스 전체)
+        const area = mapRect ?? { x: 0, y: 0, w: this.canvas.getBoundingClientRect().width, h: this.canvas.getBoundingClientRect().height };
+        const mapCenterX = area.x + area.w / 2;
+        const mapBottom = area.y + area.h;
 
-        // 내부 영역 계산 (유저가 fine-tune한 offset 적용)
-        const padX = Math.round(barW * cfg.padX)
-        const padTop = Math.round(barH * cfg.padTop)
-        const padBot = Math.round(barH * cfg.padBot)
-        const innerX = barX + padX + 15
-        const innerY = barY + padTop + 3
-        const innerW = barW - padX * 2 - 30
-        const innerH = barH - padTop - padBot - 10
+        // HP바를 맵 하단 중앙에서 약간 왼쪽에 배치 (바의 오른쪽 끝이 중앙에서 offsetLeft만큼 왼쪽)
+        const barW = cfg.w;
+        const barH = cfg.h;
+        const barX = mapCenterX - cfg.offsetLeft - barW;
+        const barY = mapBottom - cfg.marginBottom - barH;
 
-        const hpRatio = Math.max(0, Math.min(1, player.hp / player.maxHp))
-        const fillH = Math.round(innerH * hpRatio)
-        const fillY = innerY + (innerH - fillH)   // 하단 → 상단
+        // 맵 영역을 벗어나지 않도록 클램프
+        const clampedBarX = Math.max(area.x + 4, Math.min(barX, area.x + area.w - barW - 4));
+        const clampedBarY = Math.max(area.y + 4, barY);
 
-        ctx.save()
+        const hpRatio = Math.max(0, Math.min(1, player.hp / player.maxHp));
+        const fillW = Math.round(barW * hpRatio);
 
-        // ── [1] hp.png 배경 이미지 (z 최하위) ────────────
-        const hpFrameImg = resourceLoader.getImage('hpBar')
+        ctx.save();
+
+        // ── [1] 배경 프레임 ────────────
+        const hpFrameImg = resourceLoader.getImage("hpBar");
         if (hpFrameImg?.complete && (hpFrameImg.naturalWidth ?? 0) > 0) {
-            ctx.globalAlpha = 0.85
-            ctx.drawImage(hpFrameImg, barX, barY, barW, barH)
-            ctx.globalAlpha = 1
+            ctx.globalAlpha = 0.92;
+            ctx.drawImage(hpFrameImg, clampedBarX, clampedBarY, barW, barH);
+            ctx.globalAlpha = 1.0;
         } else {
-            ctx.fillStyle = 'rgba(20, 10, 10, 0.8)'
-            ctx.fillRect(barX, barY, barW, barH)
-            ctx.strokeStyle = 'rgba(140, 70, 30, 0.9)'
-            ctx.lineWidth = 2
-            ctx.strokeRect(barX, barY, barW, barH)
+            ctx.fillStyle = "rgba(20, 8, 8, 0.88)";
+            ctx.beginPath();
+            ctx.roundRect(clampedBarX, clampedBarY, barW, barH, 4);
+            ctx.fill();
         }
 
-        // ── [2] 내부 배경 (어둡게) ────────────────────────
-        ctx.fillStyle = 'rgba(5, 2, 2, 0.80)'
-        ctx.fillRect(innerX, innerY, innerW, innerH)
+        // ── [2] HP 게이지 fill ─────────
+        if (fillW > 0) {
+            const grad = ctx.createLinearGradient(clampedBarX, 0, clampedBarX + Math.min(80, fillW), 0);
+            grad.addColorStop(0, "#c80000");
+            grad.addColorStop(1, "#8b0000");
 
-        // ── [3] HP 게이지 fill — roundRect + glow 그림자 ─
-        if (fillH > 0) {
-            ctx.save()
-            // innerRect clip
-            ctx.beginPath()
-            ctx.rect(innerX, innerY, innerW, innerH)
-            ctx.clip()
-
-            // 세로 그라데이션
-            const grad = ctx.createLinearGradient(0, fillY, 0, fillY + fillH)
-            if (hpRatio > 0.6) {
-                grad.addColorStop(0, '#ff7235')
-                grad.addColorStop(0.5, '#cc1520')
-                grad.addColorStop(1, '#4a0000')
-            } else if (hpRatio > 0.3) {
-                grad.addColorStop(0, '#ff4500')
-                grad.addColorStop(1, '#330000')
-            } else {
-                grad.addColorStop(0, '#ff1515')
-                grad.addColorStop(1, '#1a0000')
-            }
-
-            // 붉은 glow 그림자 (게이지에만 적용)
-            ctx.shadowColor = hpRatio > 0.3 ? 'rgba(255, 60, 0, 0.55)' : 'rgba(255, 0, 0, 0.65)'
-            ctx.shadowBlur = 10
-            ctx.shadowOffsetX = 0
-            ctx.shadowOffsetY = 2
-
-            // 상단 모서리만 둥글게
-            const r = Math.min(4, fillH / 2)
-            ctx.fillStyle = grad
-            ctx.beginPath()
-            if (typeof ctx.roundRect === 'function') {
-                ctx.roundRect(innerX, fillY, innerW, fillH, [r, r, 0, 0])
-            } else {
-                ctx.rect(innerX, fillY, innerW, fillH)
-            }
-            ctx.fill()
-
-            // 그림자 리셋 후 하이라이트
-            ctx.shadowColor = 'transparent'
-            ctx.shadowBlur = 0
-
-            // 좌측 유리 하이라이트 (세로)
-            const hlG = ctx.createLinearGradient(innerX, 0, innerX + innerW, 0)
-            hlG.addColorStop(0, 'rgba(255,255,255,0.22)')
-            hlG.addColorStop(0.4, 'rgba(255,255,255,0.05)')
-            hlG.addColorStop(1, 'rgba(0,0,0,0)')
-            ctx.fillStyle = hlG
-            ctx.beginPath()
-            if (typeof ctx.roundRect === 'function') {
-                ctx.roundRect(innerX, fillY, innerW, fillH, [r, r, 0, 0])
-            } else {
-                ctx.rect(innerX, fillY, innerW, fillH)
-            }
-            ctx.fill()
-
-            // 상단 가로 하이라이트 선
-            if (fillH > 4) {
-                ctx.globalAlpha = 0.50
-                ctx.fillStyle = 'rgba(255, 210, 160, 0.9)'
-                ctx.fillRect(innerX + r, fillY + 1, innerW - r * 2, 2)
-                ctx.globalAlpha = 1
-            }
-
-            ctx.restore()
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.roundRect(clampedBarX, clampedBarY, fillW, barH, 4);
+            ctx.fill();
         }
 
-        ctx.restore()
+        ctx.restore();
 
-        // ── [4] 수치 텍스트 ───────────────────────────────
-        this.renderHPText(ctx, player, barX, barY + barH + 10, barW, hpRatio)
+        // ── [3] 수치 텍스트 ───────────────────────────────
+        this.renderHPText(ctx, player, clampedBarX, clampedBarY - 20, barW, hpRatio);
     }
 
     /**
-     * HP 텍스트: "현재 / 최대" + "(▲ N/s)"
+     * HP 텍스트: "현재 / 최대"
      */
     private renderHPText(
         ctx: CanvasRenderingContext2D,
@@ -189,67 +143,142 @@ export class InterfaceManager {
         barX: number,
         baseY: number,
         barW: number,
-        hpRatio: number
+        hpRatio: number,
     ): void {
-        const cx = barX + barW / 2
+        const cx = barX + barW / 2;
 
-        const hpColor = hpRatio > 0.6 ? '#f0c0c0'
-            : hpRatio > 0.3 ? '#ff8844'
-                : '#ff3333'
+        const hpColor =
+            hpRatio > 0.6 ? "#f0c0c0" : hpRatio > 0.3 ? "#ff8844" : "#ff3333";
 
-        ctx.save()
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
-        ctx.shadowColor = 'rgba(0,0,0,0.9)'
-        ctx.shadowBlur = 6
-        ctx.shadowOffsetX = 1
-        ctx.shadowOffsetY = 1
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.shadowColor = "rgba(0,0,0,0.9)";
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
 
-        ctx.font = 'bold 13px monospace'
-        ctx.fillStyle = hpColor
-        ctx.fillText(`${Math.ceil(player.hp)} / ${player.maxHp}`, cx, baseY)
+        ctx.font = "bold 13px monospace";
+        ctx.fillStyle = hpColor;
+        ctx.fillText(`${Math.ceil(player.hp)} / ${player.maxHp}`, cx, baseY);
 
-        if (player.hpRegen > 0) {
-            ctx.font = '11px monospace'
-            ctx.fillStyle = 'rgba(60, 210, 100, 0.9)'
-            ctx.fillText(`▲ ${player.hpRegen.toFixed(1)}/s`, cx, baseY + 18)
-        }
-
-        ctx.restore()
+        ctx.restore();
     }
 
     // ─────────────────────────────────────────────────────
-    //  인벤토리 아이콘
+    //  스킬 아이콘
     // ─────────────────────────────────────────────────────
 
-    private renderInventoryIcon(ctx: CanvasRenderingContext2D, resourceLoader: ResourceLoader): void {
-        const cw = this.canvas.width
-        const ch = this.canvas.height
-        const cfg = InterfaceManager.INV_ICON
-        const size = cfg.size
+    private renderSkillIcons(
+        ctx: CanvasRenderingContext2D,
+        player: Player,
+        resourceLoader: ResourceLoader,
+        mapRect?: { x: number; y: number; w: number; h: number }
+    ): void {
+        const cfg = InterfaceManager.SKILL_ICONS;
+        const size = cfg.size;
+        const gap = cfg.gap;
 
-        const iconX = Math.floor(cw / 2) + cfg.offsetFromCenter
-        const iconY = ch - size - cfg.marginBottom
+        // 맵 영역 가져오기 (fallback: 캔버스 전체)
+        const area = mapRect ?? { x: 0, y: 0, w: this.canvas.getBoundingClientRect().width, h: this.canvas.getBoundingClientRect().height };
+        const mapCenterX = area.x + area.w / 2;
+        const mapBottom = area.y + area.h;
 
-        this.inventoryIconRect = { x: iconX, y: iconY, w: size, h: size }
+        // 스킬 아이콘 세트를 맵 하단 중앙에서 약간 오른쪽에 배치
+        const startX = mapCenterX + cfg.offsetRight;
+        const startY = mapBottom - cfg.marginBottom - size;
 
-        const invImg = resourceLoader.getImage('inventoryIcon')
-        if (!invImg?.complete || (invImg.naturalWidth ?? 0) === 0) return
+        const clampedY = Math.max(area.y + 4, startY);
 
-        ctx.save()
-        ctx.shadowColor = 'rgba(255, 210, 80, 0.4)'
-        ctx.shadowBlur = 16
-        ctx.drawImage(invImg, iconX, iconY, size, size)
-        ctx.shadowBlur = 0
-        ctx.shadowColor = 'transparent'
+        const keys = ["q", "w", "e", "r"] as const;
 
-        ctx.font = 'bold 11px monospace'
-        ctx.fillStyle = 'rgba(210, 190, 100, 0.82)'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'alphabetic'
-        ctx.shadowColor = 'rgba(0,0,0,0.85)'
-        ctx.shadowBlur = 5
-        ctx.fillText('[I]', iconX + size / 2, iconY + size + 16)
-        ctx.restore()
+        keys.forEach((key, index) => {
+            const x = startX + (size + gap) * index;
+            // 맵 영역을 벗어나지 않도록 클램프
+            const clampedX = Math.min(x, area.x + area.w - size - 4);
+
+            this.skillIconRects[key] = { x: clampedX, y: clampedY, w: size, h: size };
+
+            ctx.save();
+            ctx.translate(clampedX, clampedY);
+
+            // 1) 기본 배경
+            ctx.fillStyle = "rgba(40, 40, 40, 0.8)";
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, 8);
+            ctx.fill();
+
+            // 2) 스킬 이미지
+            // 미리 정의된 "skillIcon_{key}" 리소스를 사용
+            const skillImg = resourceLoader.getImage(`skillIcon_${key}`);
+            if (skillImg && skillImg.complete && skillImg.naturalWidth > 0) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.roundRect(0, 0, size, size, 8);
+                ctx.clip(); // 둥근 테두리 클리핑
+                ctx.drawImage(skillImg, 0, 0, size, size);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = "#888";
+                ctx.font = "bold 20px monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(key.toUpperCase(), size / 2, size / 2);
+            }
+
+            // 3) 외곽선 
+            ctx.strokeStyle = "rgba(100, 100, 100, 0.8)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, 8);
+            ctx.stroke();
+
+            // 4) 쿨타임 오버레이 & 텍스트
+            const sm = player.skillManager;
+            if (sm) {
+                const currentCd = sm.getCooldown(key);
+                const maxCd = sm.skills[key]?.cooldown || 0;
+
+                if (currentCd > 0 && maxCd > 0) {
+                    const ratio = currentCd / maxCd; // 1.0 (시작) -> 0.0 (끝)
+
+                    // 반투명 회색 배경 (시계방향 투명도 효과)
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.roundRect(0, 0, size, size, 8);
+                    ctx.clip();
+
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                    ctx.beginPath();
+                    ctx.moveTo(size / 2, size / 2);
+                    // -Math.PI / 2 (12시 방향)을 시작으로 남은 시간만큼 아크 그리기
+                    ctx.arc(size / 2, size / 2, size * 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+
+                    // 남은 시간 텍스트
+                    ctx.fillStyle = "white";
+                    ctx.font = "bold 16px monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "black";
+                    ctx.shadowBlur = 4;
+                    ctx.fillText(Math.ceil(currentCd).toString(), size / 2, size / 2 + 2);
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            // 5) 하단 단축키 텍스트
+            ctx.font = "11px monospace";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.shadowColor = "black";
+            ctx.shadowBlur = 4;
+            ctx.fillText(`[${key.toUpperCase()}]`, size / 2, size - 2);
+
+            ctx.restore();
+        });
     }
 }

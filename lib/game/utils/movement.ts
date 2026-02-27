@@ -1,7 +1,7 @@
 import type { Vector2, Boundary } from '../config/types'
-import type { TileMap } from '../systems/TileMap'
+import type { ZoneMap } from '../systems/ZoneMap'
 import { MOVEMENT } from '../config/constants'
-import { getChapterConfig } from '../config/chapters'
+import { getZoneConfig } from '../config/zones'
 
 /**
  * 이동 및 충돌 관련 공통 유틸리티 함수
@@ -14,7 +14,7 @@ import { getChapterConfig } from '../config/chapters'
 
 /**
  * 특정 월드 좌표가 이동 가능한지 확인
- * @param tileMap 타일맵 인스턴스
+ * @param ZoneMap 타일맵 인스턴스
  * @param worldX 월드 X 좌표
  * @param worldY 월드 Y 좌표
  * @param yOffset Y축 오프셋 (발바닥 위치 보정)
@@ -22,14 +22,14 @@ import { getChapterConfig } from '../config/chapters'
  * @returns 이동 가능 여부
  */
 export function isPositionWalkable(
-    tileMap: TileMap | null,
+    ZoneMap: ZoneMap | null,
     worldX: number,
     worldY: number,
     yOffset: number = 0,
     allowance: number = 0
 ): boolean {
-    if (!tileMap) return true
-    return tileMap.isWalkableAtWorld(worldX, worldY + yOffset, allowance)
+    if (!ZoneMap) return true
+    return ZoneMap.isWalkableAtWorld(worldX, worldY + yOffset, allowance)
 }
 
 /**
@@ -92,18 +92,18 @@ export function clampToBoundary(
  * @param position 현재 위치 (직접 수정됨)
  * @param velocity 이동 속도 (충돌 시 0으로 설정됨)
  * @param deltaTime 델타 타임
- * @param tileMap 타일맵 인스턴스
- * @param chapterId 챕터 ID
+ * @param ZoneMap 타일맵 인스턴스
+ * @param zoneId 챕터 ID
  * @returns 이동 성공 여부
  */
 export function processEntityMovement(
     position: Vector2,
     velocity: Vector2,
     deltaTime: number,
-    tileMap: TileMap | null,
-    chapterId: number = 1
+    ZoneMap: ZoneMap | null,
+    zoneId: number = 1
 ): boolean {
-    if (!tileMap) {
+    if (!ZoneMap) {
         // 타일맵이 없으면 자유 이동
         const timeScale = deltaTime * 60
         position.x += velocity.x * timeScale
@@ -111,7 +111,7 @@ export function processEntityMovement(
         return true
     }
 
-    const config = getChapterConfig(chapterId)
+    const config = getZoneConfig(zoneId)
     const offset = config.gameplayConfig.collisionYOffset
     const allowance = 0
     const timeScale = deltaTime * 60
@@ -123,7 +123,7 @@ export function processEntityMovement(
 
     // X축 이동 시도
     const nextX = position.x + moveX
-    if (isPositionWalkable(tileMap, nextX, position.y, offset, allowance)) {
+    if (isPositionWalkable(ZoneMap, nextX, position.y, offset, allowance)) {
         position.x = nextX
         moved = true
     } else {
@@ -132,7 +132,7 @@ export function processEntityMovement(
 
     // Y축 이동 시도
     const nextY = position.y + moveY
-    if (isPositionWalkable(tileMap, position.x, nextY, offset, allowance)) {
+    if (isPositionWalkable(ZoneMap, position.x, nextY, offset, allowance)) {
         position.y = nextY
         moved = true
     } else {

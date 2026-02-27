@@ -63,62 +63,6 @@ export function setupBasicAnimations(
     })
 }
 
-// ============================================================================
-// 전투 애니메이션 설정 (5x5 그리드)
-// ============================================================================
-
-/**
- * 전투 애니메이션 설정
- * 플레이어 전투 스프라이트 (5x5 그리드)
- * 
- * @param spriteAnimation 스프라이트 애니메이션 인스턴스
- * @param fightImage 전투 이미지
- */
-export function setupFightAnimations(
-    spriteAnimation: SpriteAnimation,
-    fightImage: HTMLImageElement
-): void {
-    const totalWidth = fightImage.naturalWidth
-    const totalHeight = fightImage.naturalHeight
-    const cols = SPRITE.FIGHT_GRID_COLS
-    const rows = SPRITE.FIGHT_GRID_ROWS
-
-    const frameWidth = totalWidth / cols
-    const frameHeight = totalHeight / rows
-
-    // 공격 애니메이션 (각 방향별 5프레임)
-    // Row 0: Attack Down
-    spriteAnimation.addAnimation({
-        name: 'attack_down',
-        frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 5, cols),
-        frameRate: SPRITE.ATTACK_FRAME_RATE,
-        loop: false
-    })
-
-    // Row 1: Attack Left
-    spriteAnimation.addAnimation({
-        name: 'attack_left',
-        frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 5, cols),
-        frameRate: SPRITE.ATTACK_FRAME_RATE,
-        loop: false
-    })
-
-    // Row 2: Attack Right
-    spriteAnimation.addAnimation({
-        name: 'attack_right',
-        frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 5, cols),
-        frameRate: SPRITE.ATTACK_FRAME_RATE,
-        loop: false
-    })
-
-    // Row 3: Attack Up
-    spriteAnimation.addAnimation({
-        name: 'attack_up',
-        frames: createFramesFromGrid(0, frameHeight * 3, frameWidth, frameHeight, 5, cols),
-        frameRate: SPRITE.ATTACK_FRAME_RATE,
-        loop: false
-    })
-}
 
 // ============================================================================
 // 애니메이션 재생 헬퍼

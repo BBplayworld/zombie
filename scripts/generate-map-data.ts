@@ -6,13 +6,20 @@ import { createCanvas, loadImage } from 'canvas';
 const SIMPLIFICATION_THRESHOLD = 2; // Keep high precision
 const RED_THRESHOLD = 200; // Red channel must be > 200
 const OTHER_COLOR_THRESHOLD = 100; // Green/Blue must be < 100 → 빨간색만 이동 가능
+const GRID_CELL_SIZE = 4; // 픽셀 단위 walkability 그리드 셀 크기 (4px = 340×192 cells for 1360×768)
 
-/**
- * 이동 가능 영역 데이터화용 입력 이미지: debug 디렉토리의 map.jpg 만 사용
- */
-function getMapImagePath(projectRoot: string): string | null {
-    const p = path.join(projectRoot, 'public/assets/chapter-1/map/debug', 'map.jpg');
-    return fs.existsSync(p) ? p : null;
+function* getMapImagePaths(projectRoot: string): Generator<{ mapPath: string, zoneDir: string }> {
+    const assetsDir = path.join(projectRoot, 'public/assets');
+    if (!fs.existsSync(assetsDir)) return;
+
+    for (const folder of fs.readdirSync(assetsDir)) {
+        if (folder.startsWith('zone-')) {
+            const p = path.join(assetsDir, folder, 'map/debug', 'map.jpg');
+            if (fs.existsSync(p)) {
+                yield { mapPath: p, zoneDir: path.join(assetsDir, folder) };
+            }
+        }
+    }
 }
 
 type Point = { x: number; y: number };
@@ -201,22 +208,24 @@ function extractHolePolygons(
 
     for (const indices of nonRedComponents) {
         if (indices.length < 3) continue;
+
+        // 1. 가장자리 필터링: 화면 테두리에 닿아있는 비-빨간 영역은 화면 밖의 공간이므로 구멍(내부 장애물) 후보에서 제외
+        let touchesEdge = false;
         let sumPx = 0;
         let sumPy = 0;
         for (const idx of indices) {
-            sumPx += idx % width;
-            sumPy += Math.floor(idx / width);
-        }
-        const cx = sumPx / indices.length - center;
-        const cy = sumPy / indices.length - center;
-        let insideWalkable = false;
-        for (const poly of walkablePolygons) {
-            if (isPointInPolygon(cx, cy, poly)) {
-                insideWalkable = true;
+            const px = idx % width;
+            const py = Math.floor(idx / width);
+            if (px <= 0 || px >= width - 1 || py <= 0 || py >= height - 1) {
+                touchesEdge = true;
                 break;
             }
+            sumPx += px;
+            sumPy += py;
         }
-        if (!insideWalkable) continue;
+        if (touchesEdge) continue;
+        const cx = sumPx / indices.length - width / 2;
+        const cy = sumPy / indices.length - height / 2;
 
         const holeMask = new Uint8Array(width * height);
         for (const idx of indices) holeMask[idx] = 1;
@@ -230,11 +239,13 @@ function extractHolePolygons(
  * map.jpg 분석: 빨간색 = 이동 가능(tiles). 빨간색으로 둘러싸인 안쪽의 비-빨간 지형 = 이동 불가(obstacleTiles).
  * map-debug-*.png: 이동 가능 영역 초록, 구멍(지형 지물) 빨간색 표시.
  */
+type WalkableGrid = { cellSize: number; cols: number; rows: number; data: string };
+
 async function processOneTile(
     mapPath: string,
     tileIndex: number,
     debugOutDir: string
-): Promise<{ walkablePolygons: Point[][]; holePolygons: Point[][] }> {
+): Promise<{ walkablePolygons: Point[][]; holePolygons: Point[][]; walkableGrid: WalkableGrid }> {
     const image = await loadImage(mapPath);
     const width = image.width;
     const height = image.height;
@@ -291,11 +302,35 @@ async function processOneTile(
     }
     fs.writeFileSync(debugImagePath, debugCanvas.toBuffer('image/png'));
 
-    return { walkablePolygons, holePolygons };
+    // ── 픽셀 정밀 walkability 그리드 생성 ──────────────────────────────
+    // walkableMask(isRedPixel 결과)를 GRID_CELL_SIZE 셀 단위로 다운샘플.
+    // 셀 내 픽셀 중 하나라도 walkable이면 해당 셀 = walkable.
+    const gridCols = Math.ceil(width / GRID_CELL_SIZE);
+    const gridRows = Math.ceil(height / GRID_CELL_SIZE);
+    let gridData = '';
+    for (let gy = 0; gy < gridRows; gy++) {
+        for (let gx = 0; gx < gridCols; gx++) {
+            let walkable = false;
+            outer: for (let dy = 0; dy < GRID_CELL_SIZE; dy++) {
+                for (let dx = 0; dx < GRID_CELL_SIZE; dx++) {
+                    const px = gx * GRID_CELL_SIZE + dx;
+                    const py = gy * GRID_CELL_SIZE + dy;
+                    if (px < width && py < height && walkableMask[py * width + px] === 1) {
+                        walkable = true;
+                        break outer;
+                    }
+                }
+            }
+            gridData += walkable ? '1' : '0';
+        }
+    }
+    const walkableGrid = { cellSize: GRID_CELL_SIZE, cols: gridCols, rows: gridRows, data: gridData };
+
+    return { walkablePolygons, holePolygons, walkableGrid };
 }
 
 /**
- * 타일 로컬(중심 기준) 좌표를 월드 좌표로 변환. (단일 4048x4048 맵: 중심 = 0,0)
+ * 타일 로컬(중심 기준) 좌표를 월드 좌표로 변환.
  */
 function toWorldPoints(
     points: Point[],
@@ -309,52 +344,52 @@ function toWorldPoints(
 
 async function generateMapData(): Promise<void> {
     const projectRoot = process.cwd();
-    const mapPath = getMapImagePath(projectRoot);
-    const debugDir = path.join(projectRoot, 'public/assets/chapter-1/map/debug');
-    const mapDir = path.join(projectRoot, 'public/assets/chapter-1/map');
-    const outputPath = path.join(mapDir, 'map-data.json');
+    let count = 0;
 
-    if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
-    }
+    for (const { mapPath, zoneDir } of getMapImagePaths(projectRoot)) {
+        const debugDir = path.join(zoneDir, 'map/debug');
+        const mapDir = path.join(zoneDir, 'map');
+        const outputPath = path.join(mapDir, 'map-data.json');
 
-    if (!mapPath) {
-        console.error('Map image not found. Place map.jpg in public/assets/chapter-1/map/debug/');
-        process.exit(1);
-    }
+        console.log(`Analyzing map: ${mapPath}`);
+        const { walkablePolygons, holePolygons, walkableGrid } = await processOneTile(mapPath, 0, debugDir);
 
-    console.log(`Analyzing single map: ${mapPath}`);
-    const { walkablePolygons, holePolygons } = await processOneTile(mapPath, 0, debugDir);
+        const img = await loadImage(mapPath);
+        const mapWidth = img.width;
+        const mapHeight = img.height;
+        const opts = { center: mapWidth / 2 };
 
-    const img = await loadImage(mapPath);
-    const mapWidth = img.width;
-    const mapHeight = img.height;
-    const opts = { center: mapWidth / 2 };
-
-    const tiles: Point[][] = [];
-    for (const polygon of walkablePolygons) {
-        if (polygon.length > 0) {
-            tiles.push(toWorldPoints(polygon, opts));
+        const tiles: Point[][] = [];
+        for (const polygon of walkablePolygons) {
+            if (polygon.length > 0) {
+                tiles.push(toWorldPoints(polygon, opts));
+            }
         }
-    }
-    const obstacleTiles: Point[][] = [];
-    for (const polygon of holePolygons) {
-        if (polygon.length > 0) {
-            obstacleTiles.push(toWorldPoints(polygon, opts));
+        const obstacleTiles: Point[][] = [];
+        for (const polygon of holePolygons) {
+            if (polygon.length > 0) {
+                obstacleTiles.push(toWorldPoints(polygon, opts));
+            }
         }
+
+        const mapData = {
+            width: mapWidth,
+            height: mapHeight,
+            tiles,
+            obstacleTiles,
+            walkableGrid,  // isRedPixel 기반 픽셀 정밀 walkability 그리드
+            walkableTile: 'baseTile',
+            startPosition: { x: 0, y: 0 },
+        };
+
+        fs.writeFileSync(outputPath, JSON.stringify(mapData));
+        console.log(`Map data saved to ${outputPath} (walkable: ${tiles.length}, holes: ${obstacleTiles.length}, grid: ${walkableGrid.cols}×${walkableGrid.rows} @${walkableGrid.cellSize}px, ${mapWidth}x${mapHeight}).`);
+        count++;
     }
 
-    const mapData = {
-        width: mapWidth,
-        height: mapHeight,
-        tiles,
-        obstacleTiles,
-        walkableTile: 'baseTile',
-        startPosition: { x: 0, y: 0 },
-    };
-
-    fs.writeFileSync(outputPath, JSON.stringify(mapData));
-    console.log(`Map data saved to ${outputPath} (walkable: ${tiles.length}, holes: ${obstacleTiles.length}, ${mapWidth}x${mapHeight}).`);
+    if (count === 0) {
+        console.error('No map images found. Place map.jpg in public/assets/zone-*/map/debug/');
+    }
 }
 
 generateMapData();

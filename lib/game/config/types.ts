@@ -61,6 +61,16 @@ export interface ICombatEntity extends IEntity {
 // 타일맵 관련 타입
 // ============================================================================
 
+export interface ZonePortal {
+    x: number
+    y: number
+    width: number
+    height: number
+    targetZoneId: number
+    targetX: number
+    targetY: number
+}
+
 /**
  * 오픈 월드 맵 설정
  * 전체 맵은 단일 이미지로 렌더링되며, 타일은 카메라 바깥 배경 채우기용
@@ -75,19 +85,26 @@ export interface OpenWorldMapConfig {
     // 이동 가능 영역 (벽 안쪽, 플레이어/몬스터가 접근 가능한 영역)
     walkableArea: Boundary
 
+    // 심리스 맵 방식인지 존 방식인지
+    mapType?: 'seamless' | 'zone'
+
+    // 존 방식일 경우, 다음 구역으로 넘어가는 포탈 위치 목록
+    portals?: ZonePortal[]
+
     // @deprecated - 하위 호환용
     mapBoundary?: Boundary
     overlapOffset?: number
 }
 
 // 하위 호환성을 위한 별칭
-export type TileMapConfig = OpenWorldMapConfig
+export type ZoneMapConfig = OpenWorldMapConfig
 
 
 export interface MapData {
     width: number
     height: number
-    tiles: Vector2[]  // Boundary coordinates (polygon)
+    tiles: Vector2[][]  // Array of boundary coordinates (polygons)
+    obstacleTiles?: Vector2[][] // Array of obstacle polygons
     walkableTile: string
     startPosition: Vector2
 }
@@ -113,7 +130,8 @@ export interface MonsterSpawnConfig {
 
 export interface AssetConfig {
     player: string
-    fight: string
+    /** space 평타 이펙트 (예비, 실제 로드는 PlayerManager에서 직접 URL 지정) */
+    space?: string
     /** 단일 맵 이미지 (선택, mapTile1~4 대신 사용 가능) */
     mapBackground?: string
     mapTile1?: string
@@ -171,7 +189,7 @@ export interface MonsterDetailConfig {
 // 챕터 설정 타입
 // ============================================================================
 
-export interface ChapterConfig {
+export interface ZoneConfig {
     id: number
     name: string
     openWorldMapConfig: OpenWorldMapConfig

@@ -1,0 +1,28 @@
+# .claudeignore
+
+# 의존성 및 빌드 결과물
+node_modules/
+.next/
+out/
+build/
+.output/
+
+# 환경 변수 및 보안 파일
+.env*
+.vercel/
+.git/
+
+# 대용량 게임 에셋 (이미지, 사운드 등)
+# Claude가 이미지 바이너리 파일을 읽게 하면 토큰 낭비가 심합니다.
+public/assets/
+public/images/
+public/audio/
+
+# 로그 및 임시 파일
+*.log
+npm-debug.log*
+.DS_Store
+.antigravity/  # 사용 중이신 IDE 관련 설정 폴더
+
+# 문서 및 테스트 결과
+coverage/

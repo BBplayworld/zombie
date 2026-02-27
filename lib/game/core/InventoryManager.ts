@@ -1,4 +1,4 @@
-import { Player } from '../entities/Player'
+import { Player } from '../entities/player/Player'
 import { ItemType } from '../config/types'
 import { inventoryConfig } from '../config/Inventory'
 import { InputManager } from '../systems/InputManager'
@@ -436,8 +436,10 @@ export class InventoryManager {
     private getWindowPosition(cfg: any): { x: number, y: number } {
         const { width: winW, height: winH } = cfg.window
         const { anchor, x, y } = cfg.position
-        const cvsW = this.canvas.width
-        const cvsH = this.canvas.height
+        // canvas.width is physical, logic size is rect.width
+        const rect = this.canvas.getBoundingClientRect()
+        const cvsW = rect.width
+        const cvsH = rect.height
 
         if (anchor === 'top-right') return { x: cvsW - winW - x, y }
         if (anchor === 'top-left') return { x, y }

@@ -1,5 +1,5 @@
 import { ItemData, ItemType, ItemRarity, StatType, ItemStatValue } from '../config/types'
-import { getChapterConfig } from '../config/chapters'
+import { getZoneConfig } from '../config/zones'
 import { ItemDrop } from './ItemDrop'
 import { t } from '../config/Locale'
 
@@ -15,7 +15,7 @@ export class Item {
 
     static createRandom(x: number, y: number): Item | null {
         // 챕터 1 설정 사용 (임시)
-        const config = getChapterConfig(1).itemDropConfig
+        const config = getZoneConfig(1).itemDropConfig
         if (!config) return null
 
         // 1. 드랍 확률 체크 (Global Drop Rate)

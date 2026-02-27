@@ -1,7 +1,7 @@
 import { Vector2 } from '../utils/math'
 import { SpriteAnimation, createFramesFromGrid } from '../systems/SpriteAnimation'
-import { TileMap } from '../systems/TileMap'
-import { getChapterConfig } from '../config/chapters'
+import { ZoneMap } from '../systems/ZoneMap'
+import { getZoneConfig } from '../config/zones'
 import type { MonsterDetailConfig, EntityStats } from '../config/types'
 
 export class Monster {
@@ -35,6 +35,7 @@ export class Monster {
     /** 반격 관련 */
     private counterAttackTimer: number = 0    // 반격 쿨다운
     private isCounterAttacking: boolean = false
+    private hasDealtCounterDamage: boolean = false
     private counterAttackDuration: number = 0
     public counterAttackDamage: number = 0   // 외부에서 읽음 (GameEngine)
 
@@ -49,7 +50,7 @@ export class Monster {
     private fightImage: HTMLImageElement | null = null   // 반격 스프라이트
 
     // 타일맵 참조
-    private tileMap: TileMap | null = null
+    private ZoneMap: ZoneMap | null = null
 
     // 상세 설정
     private config: MonsterDetailConfig
@@ -133,11 +134,11 @@ export class Monster {
         this.fightImage = image
     }
 
-    setTileMap(tileMap: TileMap): void {
-        this.tileMap = tileMap
+    setZoneMap(ZoneMap: ZoneMap): void {
+        this.ZoneMap = ZoneMap
     }
 
-    update(deltaTime: number): void {
+    update(deltaTime: number, playerPosition?: Vector2): void {
         if (this.isDead) return
 
         // NaN 안전망
@@ -180,8 +181,8 @@ export class Monster {
             return
         }
 
-        // AI 업데이트
-        this.updateAI(deltaTime)
+        // AI 업데이트 (전달받은 플레이어 위치를 기반으로 추적 등)
+        this.updateAI(deltaTime, playerPosition)
         this.updateCounterCooldown(deltaTime)
 
         // 이동 로직
@@ -206,7 +207,7 @@ export class Monster {
                     this.position.x += (dx / dist) * moveBy
                     this.position.y += (dy / dist) * moveBy
                 }
-                const config = getChapterConfig(1)
+                const config = getZoneConfig(1)
                 const walkableArea = config.openWorldMapConfig.walkableArea
                 if (walkableArea) {
                     const M = 50
@@ -217,14 +218,14 @@ export class Monster {
                 }
             }
         } else if (this.velocity.x !== 0 || this.velocity.y !== 0) {
-            const cfg = getChapterConfig(1)
+            const cfg = getZoneConfig(1)
             const off = cfg.gameplayConfig.collisionYOffset
             const ts = deltaTime * 60
             const nextX = this.position.x + this.velocity.x * ts
             const nextY = this.position.y + this.velocity.y * ts
-            if (this.tileMap?.isWalkableAtWorld(nextX, this.position.y + off, 0)) this.position.x = nextX
+            if (this.ZoneMap?.isWalkableAtWorld(nextX, this.position.y + off, 0)) this.position.x = nextX
             else this.velocity.x = 0
-            if (this.tileMap?.isWalkableAtWorld(this.position.x, nextY + off, 0)) this.position.y = nextY
+            if (this.ZoneMap?.isWalkableAtWorld(this.position.x, nextY + off, 0)) this.position.y = nextY
             else this.velocity.y = 0
             const wa = cfg.openWorldMapConfig.walkableArea
             if (wa) {
@@ -243,9 +244,9 @@ export class Monster {
         }
 
         // 이탈 방지
-        const config = getChapterConfig(1)
+        const config = getZoneConfig(1)
         const offset = config.gameplayConfig?.collisionYOffset ?? 80
-        if (this.tileMap && !this.tileMap.isWalkableAtWorld(this.position.x, this.position.y + offset, 0)) {
+        if (this.ZoneMap && !this.ZoneMap.isWalkableAtWorld(this.position.x, this.position.y + offset, 0)) {
             this.position.x = this.lastValidPosition.x
             this.position.y = this.lastValidPosition.y
         } else {
@@ -291,6 +292,7 @@ export class Monster {
         // 반격 판정 (쿨다운 없으면 50% 확률로 반격)
         if (this.counterAttackTimer <= 0 && Math.random() < 0.5) {
             this.isCounterAttacking = true
+            this.hasDealtCounterDamage = false
             this.counterAttackDuration = Monster.COUNTER_DURATION
             this.counterAttackTimer = Monster.COUNTER_COOLDOWN
             return true   // 반격 발동
@@ -303,11 +305,15 @@ export class Monster {
      * GameEngine 에서 isCounterAttacking && counterAttackTimer 타이밍에 호출
      */
     public tryCounterAttack(playerX: number, playerY: number): number {
-        if (!this.isCounterAttacking) return 0
+        if (!this.isCounterAttacking || this.hasDealtCounterDamage) return 0
         const dx = playerX - this.position.x
         const dy = playerY - this.position.y
         const dist = Math.sqrt(dx * dx + dy * dy)
-        return dist <= Monster.COUNTER_RANGE ? this.counterAttackDamage : 0
+        if (dist <= Monster.COUNTER_RANGE) {
+            this.hasDealtCounterDamage = true
+            return this.counterAttackDamage
+        }
+        return 0
     }
 
     public checkPlayerCollision(playerX: number, playerY: number): void {
@@ -332,21 +338,21 @@ export class Monster {
         const sf = 0.05
         const moveX = nx * overlap * sf
         const moveY = ny * overlap * sf
-        const config = getChapterConfig(1)
+        const config = getZoneConfig(1)
         const offset = config.gameplayConfig.collisionYOffset || 80
-        if (this.tileMap?.isWalkableAtWorld(this.position.x + moveX, this.position.y + offset, 0))
+        if (this.ZoneMap?.isWalkableAtWorld(this.position.x + moveX, this.position.y + offset, 0))
             this.position.x += moveX
-        if (this.tileMap?.isWalkableAtWorld(this.position.x, this.position.y + moveY + offset, 0))
+        if (this.ZoneMap?.isWalkableAtWorld(this.position.x, this.position.y + moveY + offset, 0))
             this.position.y += moveY
     }
 
-    private updateAI(dt: number): void {
+    private updateAI(dt: number, playerPosition?: Vector2): void {
         this.stateTimer -= dt
         if (this.stateTimer > 0) return
 
         if (this.state === 'idle') {
             this.state = 'wander'
-            const config = getChapterConfig(1)
+            const config = getZoneConfig(1)
             const walkableArea = config.openWorldMapConfig.walkableArea
             const angle = Math.random() * Math.PI * 2
             const dist = 100 + Math.random() * 200
@@ -358,7 +364,7 @@ export class Monster {
                 ty = Math.max(walkableArea.minY + M, Math.min(walkableArea.maxY - M, ty))
             }
             const offset = config.gameplayConfig.collisionYOffset || 80
-            if (this.tileMap && !this.tileMap.isWalkableAtWorld(tx, ty + offset, 50)) {
+            if (this.ZoneMap && !this.ZoneMap.isWalkableAtWorld(tx, ty + offset, 50)) {
                 this.state = 'idle'
                 this.stateTimer = 1
                 this.isMoving = false
@@ -388,6 +394,50 @@ export class Monster {
             this.stateTimer = 2 + Math.random() * 3
             this.isMoving = false
         }
+
+        // --- 플레이어 추적 처리 (공격 및 반격 시 따라붙기) ---
+        if (playerPosition) {
+            // 맞았거나 (hp < maxHp), 자동공격 몬스터이거나, 반격 쿨타임 도는 중이면 추적
+            // 단, 너무 멀어지면(detectionRange 초과 시) 포기하고 기존 AI 지속
+            const dx = playerPosition.x - this.position.x;
+            const dy = playerPosition.y - this.position.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            const isAggro = this.hp < this.maxHp || this.config.autoAttack || this.counterAttackTimer > 0;
+
+            // 추적 대상 선정: 사거리 이내이고 어그로가 끌렸다면 쫓아감
+            if (isAggro && dist <= (this.config.detectionRange || 400)) {
+                if (dist > Monster.COUNTER_RANGE * 0.8) {
+                    // 추적 모드 발동: 몬스터가 플레이어를 향해 걸어감
+                    if (!this.moveTarget) this.moveTarget = new Vector2(0, 0);
+                    this.moveTarget.x = playerPosition.x;
+                    this.moveTarget.y = playerPosition.y;
+                    this.isMoving = true;
+                    // 기존 idle/wander 상태 타이머를 리셋시켜 다른 행동 취소
+                    this.stateTimer = 0.5;
+                    this.state = 'chase';
+                } else if (dist <= Monster.COUNTER_RANGE) {
+                    // 근접 시 정지 후 반격/공격 모션
+                    this.isMoving = false;
+                    this.moveTarget = null;
+                    this.stateTimer = 0.5;
+
+                    // autoAttack 몬스터: 쿨다운 없으면 능동적으로 공격 발동
+                    if (this.config.autoAttack && this.counterAttackTimer <= 0 && !this.isCounterAttacking) {
+                        this.isCounterAttacking = true;
+                        this.hasDealtCounterDamage = false;
+                        this.counterAttackDuration = Monster.COUNTER_DURATION;
+                        this.counterAttackTimer = Monster.COUNTER_COOLDOWN;
+                    }
+                }
+            } else if (this.state === 'chase') {
+                // 사거리 벗어나서 쫓는걸 포기하면 idle로 복귀
+                this.state = 'idle';
+                this.stateTimer = 1;
+                this.isMoving = false;
+                this.moveTarget = null;
+            }
+        }
     }
 
     public pushFrom(otherX: number, otherY: number, force: number): void {
@@ -397,11 +447,11 @@ export class Monster {
         if (dist <= 0) return
         const nx = dx / dist
         const ny = dy / dist
-        const config = getChapterConfig(1)
+        const config = getZoneConfig(1)
         const offset = config.gameplayConfig.collisionYOffset || 80
-        if (this.tileMap?.isWalkableAtWorld(this.position.x + nx * force, this.position.y + offset, 0))
+        if (this.ZoneMap?.isWalkableAtWorld(this.position.x + nx * force, this.position.y + offset, 0))
             this.position.x += nx * force
-        if (this.tileMap?.isWalkableAtWorld(this.position.x, this.position.y + ny * force + offset, 0))
+        if (this.ZoneMap?.isWalkableAtWorld(this.position.x, this.position.y + ny * force + offset, 0))
             this.position.y += ny * force
     }
 

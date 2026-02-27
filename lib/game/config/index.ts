@@ -9,14 +9,14 @@ export type {
     Boundary,
     IEntity,
     ICombatEntity,
-    TileMapConfig,
+    ZoneMapConfig,
     MapData,
     GameplayConfig,
     MonsterSpawnConfig,
     AssetConfig,
     MonsterDetailConfig,
     PlayerConfig,
-    ChapterConfig
+    ZoneConfig
 } from './types'
 
 // 상수
@@ -31,9 +31,8 @@ export {
 
 // 챕터 설정
 export {
-    CHAPTER_CONFIGS,
-    getChapterConfig,
-    useChapter
-} from './chapters'
+    ZONE_CONFIGS,
+    getZoneConfig,
+} from './zones'
 
-// 플레이어 설정은 entities/Player.ts 내 상수로 통합됨 (BASE_SPEED 등)
+export { Player } from '../entities/player/Player'

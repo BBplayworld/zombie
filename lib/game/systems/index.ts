@@ -3,8 +3,9 @@
  */
 
 export { Camera } from './Camera'
-export { TileMap } from './TileMap'
+export { ZoneMap } from './ZoneMap'
 export { InputManager } from './InputManager'
 export { ResourceLoader } from './ResourceLoader'
 export { SpriteAnimation, createFramesFromGrid } from './SpriteAnimation'
 export type { SpriteFrame, Animation } from './SpriteAnimation'
+export { CombatTextManager } from './CombatTextManager'

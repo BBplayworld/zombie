@@ -1,12 +1,13 @@
 import { Camera } from '../systems/Camera'
-import { Player } from '../entities/Player'
+import { Player } from '../entities/player/Player'
 import { Monster } from '../entities/Monster'
 import { ItemDrop } from '../entities/ItemDrop'
-import { TileMap } from '../systems/TileMap'
+import { ZoneMap } from '../systems/ZoneMap'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { InventoryManager } from './InventoryManager'
 import { InterfaceManager } from './InterfaceManager'
 import { MiniMap } from '../systems/MiniMap'
+import { CombatTextManager } from '../systems/CombatTextManager'
 
 /**
  * 렌더링 관리 클래스
@@ -23,10 +24,7 @@ export class RenderManager {
     private frameCount: number = 0
     private fpsUpdateTime: number = 0
 
-    /** 인벤토리 아이콘 클릭 영역 — InterfaceManager를 직접 참조하거나 이 프록시 사용 */
-    get inventoryIconRect() {
-        return this.interfaceManager.inventoryIconRect
-    }
+
 
     constructor(canvas: HTMLCanvasElement, resourceLoader: ResourceLoader) {
         this.canvas = canvas
@@ -52,27 +50,38 @@ export class RenderManager {
     }
 
     render(
-        tileMap: TileMap,
+        ZoneMap: ZoneMap,
         camera: Camera,
         player: Player,
         monsters: Monster[],
         items: ItemDrop[],
         gameState: string,
-        inventoryManager: InventoryManager
+        inventoryManager: InventoryManager,
+        combatTextManager: CombatTextManager
     ): void {
         this.clearScreen()
         this.ctx.save()
 
         // 1. 타일맵
-        tileMap.render(this.ctx, camera)
+        ZoneMap.render(this.ctx, camera)
 
         // 2. 엔티티 (Y축 정렬)
         this.renderEntities(player, monsters, items, camera)
 
+        // 데미지 텍스트
+        combatTextManager.render(this.ctx, camera)
+
         this.ctx.restore()
 
         // 3. UI (인벤토리 → 미니맵 → HUD 순)
-        this.renderUI(player, camera, gameState, inventoryManager, monsters)
+        // 맵 이미지의 스크린 좌표를 계산해서 모든 UI의 기준점으로 사용
+        const mapRect = ZoneMap.getMapScreenRect(camera)
+        this.renderUI(player, camera, gameState, inventoryManager, monsters, mapRect)
+
+        // 4. 피격 화면 비네트 (UI 위에 그려 항상 최상단 표시)
+        if (player.isDamaged) {
+            this.renderHitVignette()
+        }
     }
 
     private clearScreen(): void {
@@ -103,20 +112,47 @@ export class RenderManager {
         camera: Camera,
         gameState: string,
         inventoryManager: InventoryManager,
-        monsters: Monster[]
+        monsters: Monster[],
+        mapRect: { x: number; y: number; w: number; h: number } | null
     ): void {
         if (player.isInventoryOpen) {
             inventoryManager.render(this.ctx, this.resourceLoader)
         }
 
-        // 미니맵 (인벤토리 위에도 표시)
-        this.miniMap.render(this.ctx, player.position, monsters)
+        // 미니맵 — 맵 이미지 우상단에 고정
+        this.miniMap.render(this.ctx, player.position, monsters, mapRect ?? undefined)
 
-        // 하단 HUD — InterfaceManager에 위임
-        this.interfaceManager.render(this.ctx, player, this.resourceLoader)
+        // 하단 HUD — 맵 이미지 하단 기준
+        this.interfaceManager.render(this.ctx, player, this.resourceLoader, mapRect ?? undefined)
 
         // 디버그 정보는 항상 최상단
         this.renderDebugInfo(player, camera, gameState)
+    }
+
+    /**
+     * 피격 시 화면 가장자리 붉은 비네트 렌더.
+     * player.isDamaged 가 true인 동안 호출됩니다.
+     *
+     * ─ 강도 조정: alpha 값 수정
+     * ─ 크기 조정: innerRadius(0.35) 수정
+     */
+    private renderHitVignette(): void {
+        const alpha = 0.45
+
+        const w = this.canvas.width
+        const h = this.canvas.height
+        const cx = w / 2
+        const cy = h / 2
+        const r = Math.max(w, h) * 0.75
+
+        const grad = this.ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, r)
+        grad.addColorStop(0, `rgba(200, 0, 0, 0)`)
+        grad.addColorStop(1, `rgba(200, 0, 0, ${alpha})`)
+
+        this.ctx.save()
+        this.ctx.fillStyle = grad
+        this.ctx.fillRect(0, 0, w, h)
+        this.ctx.restore()
     }
 
     private renderDebugInfo(player: Player, camera: Camera, gameState: string): void {
@@ -124,7 +160,7 @@ export class RenderManager {
         this.ctx.textAlign = 'left'
         this.ctx.textBaseline = 'alphabetic'
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
-        this.ctx.fillRect(10, 10, 220, 120)
+        this.ctx.fillRect(10, 10, 220, 140)
 
         this.applyTextShadow(this.ctx)
         this.ctx.fillStyle = '#fff'
@@ -132,8 +168,9 @@ export class RenderManager {
         this.ctx.fillText(`FPS: ${this.fps}`, 20, 30)
         this.ctx.fillText(`Player: (${Math.floor(player.position.x)}, ${Math.floor(player.position.y)})`, 20, 50)
         this.ctx.fillText(`Camera: (${Math.floor(camera.position.x)}, ${Math.floor(camera.position.y)})`, 20, 70)
-        this.ctx.fillText(`State: ${gameState}`, 20, 90)
-        this.ctx.fillText(`Moving: ${player.isMoving ? 'Yes' : 'No'}`, 20, 110)
+        this.ctx.fillText(`C-Scale: ${camera.scale.toFixed(2)}`, 20, 90)
+        this.ctx.fillText(`State: ${gameState}`, 20, 110)
+        this.ctx.fillText(`Moving: ${player.isMoving ? 'Yes' : 'No'}`, 20, 130)
         this.ctx.restore()
     }
 

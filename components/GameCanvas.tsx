@@ -45,11 +45,20 @@ export default function GameCanvas() {
         if (!canvas) return
 
         const resize = () => {
-            const parent = canvas.parentElement
-            if (!parent) return
-            canvas.width = parent.clientWidth
-            canvas.height = parent.clientHeight
-            gameEngineRef.current?.resize(canvas.width, canvas.height)
+            // 논리적 크기(물리적 픽셀 비율 적용)와 물리적 크기(css) 불일치로 인한 늘어짐 방지
+            const logicalWidth = window.innerWidth
+            const logicalHeight = window.innerHeight
+            const dpr = window.devicePixelRatio || 1
+
+            // 캔버스의 렌더링 해상도를 기기 픽셀 비율에 맞춰 뻥튀기
+            canvas.width = logicalWidth * dpr
+            canvas.height = logicalHeight * dpr
+
+            // 화면에 표시될 CSS 크기는 브라우저 창 크기에 맞춤
+            canvas.style.width = `${logicalWidth}px`
+            canvas.style.height = `${logicalHeight}px`
+
+            gameEngineRef.current?.resize(logicalWidth, logicalHeight, dpr)
         }
         resize()
         window.addEventListener('resize', resize)
@@ -83,12 +92,15 @@ export default function GameCanvas() {
         const canvas = canvasRef.current
         if (!canvas) return
 
-        // 이 시점에 캔버스 크기 재설정
-        const parent = canvas.parentElement
-        if (parent) {
-            canvas.width = parent.clientWidth
-            canvas.height = parent.clientHeight
-        }
+        // 이 시점에 캔버스 해상도 재설정 (물리적 해상도와 논리적 해상도 분리)
+        const logicalWidth = window.innerWidth
+        const logicalHeight = window.innerHeight
+        const dpr = window.devicePixelRatio || 1
+
+        canvas.width = logicalWidth * dpr
+        canvas.height = logicalHeight * dpr
+        canvas.style.width = `${logicalWidth}px`
+        canvas.style.height = `${logicalHeight}px`
 
         const init = async () => {
             try {

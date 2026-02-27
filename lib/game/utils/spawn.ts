@@ -1,8 +1,8 @@
 import type { Vector2, Boundary } from '../config/types'
-import type { TileMap } from '../systems/TileMap'
+import type { ZoneMap } from '../systems/ZoneMap'
 import type { MonsterDetailConfig } from '../config/types'
 import { MOVEMENT } from '../config/constants'
-import { getChapterConfig } from '../config/chapters'
+import { getZoneConfig } from '../config/zones'
 import { isPositionWalkable } from './movement'
 
 /**
@@ -18,19 +18,19 @@ import { isPositionWalkable } from './movement'
  * 안전한 스폰 위치 찾기
  * 맵 경계 내에서 이동 가능한 랜덤 위치를 찾음
  * 
- * @param tileMap 타일맵 인스턴스
+ * @param ZoneMap 타일맵 인스턴스
  * @param boundary 맵 경계
  * @param playerPosition 플레이어 위치 (플레이어 근처는 피함)
- * @param chapterId 챕터 ID
+ * @param zoneId 챕터 ID
  * @returns 스폰 가능한 위치 또는 null
  */
 export function findSafeSpawnPosition(
-    tileMap: TileMap,
+    ZoneMap: ZoneMap,
     boundary: Boundary | undefined,
     playerPosition: Vector2,
-    chapterId: number = 1
+    zoneId: number = 1
 ): Vector2 | null {
-    const config = getChapterConfig(chapterId)
+    const config = getZoneConfig(zoneId)
 
     let spawnX = 0
     let spawnY = 0
@@ -49,13 +49,13 @@ export function findSafeSpawnPosition(
         const mapData = config.mapData
         const gx = Math.floor(Math.random() * mapData.width)
         const gy = Math.floor(Math.random() * mapData.height)
-        const wPos = tileMap.gridToWorld(gx, gy)
+        const wPos = ZoneMap.gridToWorld(gx, gy)
         spawnX = wPos.x
         spawnY = wPos.y
     }
 
     // 해당 위치가 이동 가능한지 확인
-    if (!isPositionWalkable(tileMap, spawnX, spawnY, 0, 0)) {
+    if (!isPositionWalkable(ZoneMap, spawnX, spawnY, 0, 0)) {
         return null
     }
 

@@ -9,7 +9,7 @@ const cinzelDecorative = Cinzel_Decorative({
 })
 
 export const metadata: Metadata = {
-    title: '🧟 Zombie MMORPG',
+    title: '🧟 MMORPG',
     description: 'Canvas-based Quarter-view Zombie MMORPG Open World Game',
 }
 

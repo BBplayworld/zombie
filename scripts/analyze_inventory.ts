@@ -3,7 +3,7 @@ import path from 'path';
 
 async function analyzeInventory() {
     try {
-        const imagePath = path.resolve(__dirname, '../public/assets/chapter-1/player/inventory-debug.png');
+        const imagePath = path.resolve(__dirname, '../public/assets/zone-1/player/inventory-debug.png');
         const image = sharp(imagePath);
         const metadata = await image.metadata();
 
