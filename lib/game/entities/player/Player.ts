@@ -1,4 +1,5 @@
 import { Vector2 } from "../../utils/math";
+import { SoundManager } from "../../systems/SoundManager";
 import {
   SpriteAnimation,
   createFramesFromGrid,
@@ -12,7 +13,7 @@ import {
   ItemType,
 } from "../../config/types";
 import { Item } from "../Item";
-import { SkillManager } from "./Skills";
+import { SkillManager, SkillKey } from "./Skills";
 import { Inventory } from "../Inventory";
 import {
   registerMoveAnimations,
@@ -254,16 +255,27 @@ export class Player {
     return { amount: Math.floor(this.damage * multiplier * variance), isCrit };
   }
 
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, attackerX?: number): void {
     this.hp = Math.max(0, this.hp - amount);
-    // 피격 애니메이션 시작 (현재 방향 기준 char_damage_{방향})
-    const dir = this.direction === "up" ? "left" : this.direction;
-    const animName = `char_damage_${dir}`;
-    if (this.damageAnimation.getAnimation(animName)) {
-      this.isDamaged = true;
-      this.damageAnimation.playOnce(animName, () => {
-        this.isDamaged = false;
-      });
+
+    // 공격자 위치에 따라 데미지 방향 결정 (디폴트는 현재 방향)
+    let dir = this.direction === "up" ? "left" : this.direction;
+    if (attackerX !== undefined) {
+      // 몬스터가 플레이어 기준으로 오른쪽에 있으면 (attackerX > x), 
+      // 오른쪽에서 맞은 것이므로 데미지 애니메이션은 우측을 향해야 함 (damage-right)
+      dir = attackerX > this.position.x ? "right" : "left";
+    }
+
+    // 공격 중이 아닐 때만 피격 애니메이션 및 상태 변경 실행
+    // (HP 감소 및 텍스트/경고 UI 등은 상단 hp 감소 로직과 외부 매니저를 통해 정상 작동하지만, 캐릭터 애니메이션이 끊기는 걸 방지)
+    if (!this.isAttacking) {
+      const animName = `player_damage_${dir}`;
+      if (this.damageAnimation.getAnimation(animName)) {
+        this.isDamaged = true;
+        this.damageAnimation.playOnce(animName, () => {
+          this.isDamaged = false;
+        });
+      }
     }
   }
 
@@ -387,22 +399,26 @@ export class Player {
     const dir = this.direction === "up" ? "left" : this.direction;
 
     // Layer 1: 캐릭터 동작 애니메이션
-    const charAnim = skillKey ? `char_skill_${dir}` : `char_attack_${dir}`;
+    const charAnim = skillKey ? `player_skills_action_qwer_${dir}` : `player_skills_action_space_${dir}`;
     this.spriteAnimation.playOnce(charAnim, () => {
       // 애니메이션 완료 후 상태 초기화
       this.isAttacking = false;
       this.currentSkill = null;
       this.velocity.x = 0;
       this.velocity.y = 0;
-      this.spriteAnimation.play(`idle_${dir}`);
+      this.spriteAnimation.play(`player_idle_${dir}`);
     });
 
     // Layer 2: 이펙트 오버레이 애니메이션
     const effectKey = skillKey ?? "space";
-    const effectAnim = `effect_${effectKey}_${dir}`;
+    const effectAnim = `player_skills_effect_${effectKey}_${dir}`;
     if (this.effectAnimation.getAnimation(effectAnim)) {
       this.effectAnimation.playOnce(effectAnim);
     }
+
+    // 사운드 재생
+    const soundKey = `player_skills_${skillKey ?? "space"}`;
+    SoundManager.getInstance().playFX(soundKey);
   }
 
   /**
@@ -470,7 +486,7 @@ export class Player {
 
     this.isMoving = this.velocity.x !== 0 || this.velocity.y !== 0;
     const dir = this.direction === "up" ? "left" : this.direction;
-    const anim = this.isMoving ? `walk_${this.direction}` : `idle_${dir}`;
+    const anim = this.isMoving ? `player_walk_${this.direction}` : `player_idle_${dir}`;
     this.spriteAnimation.play(anim);
   }
 
@@ -498,20 +514,8 @@ export class Player {
     ctx.fill();
     ctx.restore();
 
-    // ── 공격 범위 원 ────────────────────────────────────────────────────────
-    if (this.attackVisualTimer > 0) {
-      const ratio = this.attackVisualTimer / this.ATTACK_VISUAL_DURATION;
-      const range = 250;
-      ctx.save();
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(255, 50, 50, ${ratio * 0.3})`;
-      ctx.arc(0, 0, range, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = `rgba(255, 100, 100, ${ratio * 0.8})`;
-      ctx.stroke();
-      ctx.restore();
-    }
+    // ── 공격 범위 시각화 ──────────────────────────────────────────────────────
+    this.renderHitArea(ctx);
 
     // ── Layer 1: 캐릭터 스프라이트 ─────────────────────────────────────────
     if (!this.isDamaged) {
@@ -539,6 +543,49 @@ export class Player {
   // =========================================================================
 
   /**
+   * 공격 범위 시각화 (attackVisualTimer에 맞춰 렌더링)
+   */
+  private renderHitArea(ctx: CanvasRenderingContext2D): void {
+    if (this.attackVisualTimer <= 0) return;
+
+    const ratio = this.attackVisualTimer / this.ATTACK_VISUAL_DURATION;
+    const skillKey: SkillKey = (this.currentSkill as SkillKey) || "space";
+    const skillDef = this.skillManager?.skills[skillKey];
+
+    const range = skillDef?.range || 250;
+    const hitArea = skillDef?.hitArea;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(255, 50, 50, ${ratio * 0.3})`;
+
+    if (hitArea && hitArea.type === "semicircle") {
+      const fDir = this.getFacingVector();
+      const angle = Math.atan2(fDir.y, fDir.x);
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, range, angle - Math.PI / 2, angle + Math.PI / 2);
+      ctx.closePath();
+    } else if (hitArea && hitArea.type === "rectangle") {
+      const width = hitArea.width || 80;
+      const fDir = this.getFacingVector();
+      const angle = Math.atan2(fDir.y, fDir.x);
+
+      ctx.rotate(angle);
+      // 플레이어 중앙(0,0)에서 전방(x>0)으로 range만큼, y축으로 -width ~ width 직사각형
+      ctx.rect(0, -width, range, width * 2);
+    } else {
+      // 기본 원형
+      ctx.arc(0, 0, range, 0, Math.PI * 2);
+    }
+
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255, 100, 100, ${ratio * 0.8})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
    * Layer 1 렌더: 캐릭터 스프라이트
    *
    * 상태           | 사용 이미지              | 애니메이션 이름
@@ -555,6 +602,15 @@ export class Player {
 
     if (img && img.complete && img.naturalWidth !== 0 && frame) {
       ctx.save();
+
+      // 플레이어 시인성 확보: 금색 테두리를 위한 4방향 drop-shadow 필터
+      ctx.filter = `
+        drop-shadow(2px 0 0 rgba(255, 215, 0, 1))
+        drop-shadow(-2px 0 0 rgba(255, 215, 0, 1))
+        drop-shadow(0 2px 0 rgba(255, 215, 0, 1))
+        drop-shadow(0 -2px 0 rgba(255, 215, 0, 1))
+      `;
+
       ctx.drawImage(
         img,
         frame.x, frame.y, frame.width, frame.height,   // 소스 프레임
@@ -673,13 +729,23 @@ export class Player {
    *          | action/damage-right.png   |
    */
   private renderDamageSprite(ctx: CanvasRenderingContext2D): void {
-    const isRight = this.direction === "right" || this.direction === "down";
+    const currentAnim = this.damageAnimation.getCurrentAnimationName();
+    const isRight = currentAnim.includes("right");
     const damageImg = isRight ? this.damageImageRight : this.damageImageLeft;
     const frame = this.damageAnimation.getCurrentFrame();
 
     if (!damageImg || !damageImg.complete || damageImg.naturalWidth === 0 || !frame) return;
 
     ctx.save();
+
+    // 플레이어 시인성 확보: 테두리를 위한 4방향 drop-shadow 필터
+    ctx.filter = `
+        drop-shadow(2px 0 0 rgba(168, 165, 0, 1))
+        drop-shadow(-2px 0 0 rgba(168, 165, 0, 1))
+        drop-shadow(0 2px 0 rgba(168, 165, 0, 1))
+        drop-shadow(0 -2px 0 rgba(168, 165, 0, 1))
+      `;
+
     ctx.drawImage(
       damageImg,
       frame.x, frame.y, frame.width, frame.height,
@@ -703,7 +769,7 @@ export class Player {
 
     const pct = Math.max(0, this.hp / this.maxHp);
     const grad = ctx.createLinearGradient(-barWidth / 2, 0, barWidth / 2, 0);
-    grad.addColorStop(0, "#c80000"); // 짙은 빨강
+    grad.addColorStop(0, "rgba(200, 0, 0, 1)"); // 짙은 빨강
     grad.addColorStop(1, "#8b0000"); // 더 짙은 빨강
     ctx.fillStyle = grad;
     ctx.fillRect(-barWidth / 2 + 1, yOffset + 1, (barWidth - 2) * pct, barHeight - 2);
@@ -790,16 +856,3 @@ export class Player {
     }
   }
 }
-// ─────────────────────────────────────────────────────────────────────────────
-// ❗ 이미지 교체 가이드
-// ─────────────────────────────────────────────────────────────────────────────
-// [Layer 1 - 캐릭터 스프라이트]
-//   이동        : public/assets/main/player/action/move-left.png, move-right.png
-//   space 공격  : public/assets/main/player/action/space-left.png, space-right.png
-//   qwer 스킬   : public/assets/main/player/action/skills-left.png, skills-right.png
-//
-// [Layer 2 - 이펙트 오버레이]
-//   space 이펙트: public/assets/main/player/skills/space/q-1~5.png
-//   q 스킬 이펙트: public/assets/main/player/skills/q/q-1~5.png
-//   (프레임 수 변경 시 PlayerManager.ts SKILL_FRAME_URLS 수정)
-// ─────────────────────────────────────────────────────────────────────────────

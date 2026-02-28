@@ -1,7 +1,7 @@
 import { Player } from "../entities/player/Player";
 import { SkillManager, SkillKey } from "../entities/player/Skills";
 import { stitchImageFrames, loadDirImages } from "../entities/player/PlayerAnimations";
-import { Monster } from '../entities/Monster';
+import { Monster } from '../entities/monster/Monster';
 import { ItemDrop } from '../entities/ItemDrop';
 import { Item } from '../entities/Item';
 import { ZoneMap } from '../systems/ZoneMap';
@@ -110,6 +110,7 @@ export class PlayerManager {
         this.canvas = canvas;
         this.combatTextManager = combatTextManager;
         this.skillManager = new SkillManager(this.player);
+        this.player.skillManager = this.skillManager; // player 내부에서 접근 가능하도록 연결
     }
 
     // =========================================================================
@@ -238,8 +239,8 @@ export class PlayerManager {
         const damageMult = skill.damageMultiplier;
         const dashSpeed = skill.dashSpeed ?? 0;
 
-        // 평타(space)는 skillKey 없이 attack() 호출 → attack_방향 애니메이션 재생
-        // 스킬(q/w/e/r)은 skillKey 전달 → skill_{key}_{방향} 애니메이션 재생
+        // 평타(space)는 skillKey 없이 attack() 호출 → player_skills_action_space_{방향} 애니메이션 재생
+        // 스킬(q/w/e/r)은 skillKey 전달 → player_skills_action_{key}_{방향} 애니메이션 재생
         this.player.attack(skillKey === "space" ? undefined : skillKey, dashSpeed);
 
         let hits = 0;
@@ -291,7 +292,7 @@ export class PlayerManager {
         monsters.forEach((monster) => {
             const dmg = monster.tryCounterAttack(this.player.position.x, this.player.position.y);
             if (dmg > 0) {
-                this.player.takeDamage(dmg);
+                this.player.takeDamage(dmg, monster.position.x);
                 this.combatTextManager.add(
                     this.player.position.x,
                     this.player.position.y - this.player.height / 2,

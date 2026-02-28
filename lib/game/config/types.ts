@@ -54,7 +54,7 @@ export interface ICombatEntity extends IEntity {
     health: number
     maxHealth: number
     attack(): void
-    takeDamage(amount: number): void
+    takeDamage(amount: number, attackerX?: number): void
 }
 
 // ============================================================================
@@ -158,6 +158,11 @@ export interface AssetConfig {
     hpBar?: string
     /** 인벤토리 아이콘 이미지 */
     inventoryIcon?: string
+    /** 스킬 아이콘 이미지 */
+    skillIcon_q?: string
+    skillIcon_w?: string
+    skillIcon_e?: string
+    skillIcon_r?: string
 }
 
 // ============================================================================

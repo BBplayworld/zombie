@@ -1,4 +1,4 @@
-import { Monster } from '../entities/Monster'
+import { Monster } from '../entities/monster/Monster'
 import { ZoneMap } from '../systems/ZoneMap'
 import { ResourceLoader } from '../systems/ResourceLoader'
 import { Vector2 } from '../utils/math'

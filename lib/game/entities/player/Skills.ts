@@ -2,6 +2,11 @@ import { Player } from "./Player";
 
 export type SkillKey = "space" | "q" | "w" | "e" | "r";
 
+export interface SkillHitArea {
+    type: "rectangle" | "circle" | "semicircle";
+    width?: number; // rectangle일 경우 좌우(위아래) 범위
+}
+
 export interface SkillDefinition {
     id: SkillKey;
     cooldown: number; // in seconds
@@ -10,6 +15,7 @@ export interface SkillDefinition {
     range?: number; // max range for hit detection
     duration?: number; // visual or execution duration
     type: "melee" | "projectile" | "directional"; // for hit detection logic
+    hitArea?: SkillHitArea; // 범위 미세 조정 설정
 }
 
 export class SkillManager {
@@ -34,15 +40,19 @@ export class SkillManager {
             range: 250,      // PlayerManager.DEFAULT_ATTACK_RANGE
             duration: 0.3,
             type: "melee",
+            // rectangle: 좁은 직선
+            hitArea: { type: "rectangle", width: 80 }
         },
         q: {
             id: "q",
-            cooldown: 0,
+            cooldown: 1,
             damageMultiplier: 2.5,
             dashSpeed: 500,
             range: 300,
             duration: 0.3,
             type: "directional",
+            // semicircle: 전방 반원형
+            hitArea: { type: "semicircle" }
         },
         w: { id: "w", cooldown: 5.0, damageMultiplier: 1.5, duration: 0.3, type: "melee" },
         e: { id: "e", cooldown: 5.0, damageMultiplier: 1.5, duration: 0.3, type: "melee" },
@@ -87,7 +97,27 @@ export class SkillManager {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         const range = skill.range || 250;
+        const hitArea = skill.hitArea;
 
+        // 세부 설정된 히트 영역(hitArea)이 있다면 우선 적용합니다.
+        if (hitArea) {
+            const lookDir = this.player.getFacingVector();
+            const dotProduct = dx * lookDir.x + dy * lookDir.y;
+            const crossProduct = Math.abs(dx * lookDir.y - dy * lookDir.x);
+
+            if (hitArea.type === "rectangle") {
+                // 직사각형 범위 (예: space 평타, 앞쪽 일정 폭만 타격)
+                const width = hitArea.width || 80;
+                return dotProduct > 0 && dotProduct <= range && crossProduct <= width;
+            } else if (hitArea.type === "semicircle") {
+                // 반원 범위 (예: q 스킬, 바라보는 방향 내의 반원 영역)
+                return dist <= range && dotProduct > 0;
+            } else if (hitArea.type === "circle") {
+                return dist <= range;
+            }
+        }
+
+        // 기존 type 기반 로직 (하위 호환)
         if (skill.type === "directional") {
             // Forward dash attack logic - check if monster is in front within a rectangular bound
             const lookDir = this.player.getFacingVector();

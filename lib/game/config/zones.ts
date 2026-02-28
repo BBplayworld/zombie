@@ -32,10 +32,12 @@ export const ZONE_CONFIGS: Record<number, ZoneConfig> = {
             },
             mapType: 'zone',
             portals: [
+                /*
                 {
-                    x: 600, y: -200, width: 80, height: 400,
+                    x: 660, y: -200, width: 80, height: 400,
                     targetZoneId: 2, targetX: -500, targetY: 0
                 }
+                    */
             ]
         },
 

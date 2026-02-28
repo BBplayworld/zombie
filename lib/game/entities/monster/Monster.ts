@@ -1,8 +1,9 @@
-import { Vector2 } from '../utils/math'
-import { SpriteAnimation, createFramesFromGrid } from '../systems/SpriteAnimation'
-import { ZoneMap } from '../systems/ZoneMap'
-import { getZoneConfig } from '../config/zones'
-import type { MonsterDetailConfig, EntityStats } from '../config/types'
+import { Vector2 } from '../../utils/math'
+import { SpriteAnimation } from '../../systems/SpriteAnimation'
+import { ZoneMap } from '../../systems/ZoneMap'
+import { getZoneConfig } from '../../config/zones'
+import type { MonsterDetailConfig, EntityStats } from '../../config/types'
+import { setupMonsterAnimations } from './MonsterAnimations'
 
 export class Monster {
     public position: Vector2
@@ -87,43 +88,7 @@ export class Monster {
     }
 
     private setupAnimations(): void {
-        const frameWidth = 341
-        const frameHeight = 341
-
-        // ── 이동 애니메이션 (3×3 그리드) ─────────────────
-        this.spriteAnimation.addAnimation({
-            name: 'walk_down', frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3), frameRate: 6
-        })
-        this.spriteAnimation.addAnimation({
-            name: 'walk_left', frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3), frameRate: 6
-        })
-        this.spriteAnimation.addAnimation({
-            name: 'walk_up', frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3), frameRate: 6
-        })
-        this.spriteAnimation.addAnimation({
-            name: 'walk_right', frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 3, 3), frameRate: 6
-        })
-
-        // ── Idle 애니메이션 ──────────────────────────────
-        const idleDown = createFramesFromGrid(0, 0, frameWidth, frameHeight, 1, 3)[0]
-        const idleLeft = createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 1, 3)[0]
-        const idleRight = createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 1, 3)[0]
-
-        this.spriteAnimation.addAnimation({ name: 'idle_down', frames: [idleDown], frameRate: 1 })
-        this.spriteAnimation.addAnimation({ name: 'idle_left', frames: [idleLeft], frameRate: 1 })
-        this.spriteAnimation.addAnimation({ name: 'idle_right', frames: [idleRight], frameRate: 1 })
-        this.spriteAnimation.addAnimation({ name: 'idle_up', frames: [idleLeft], frameRate: 1 })
-
-        // ── 반격 애니메이션 — fight.png 5×5 그리드 ───────
-        // fight.png 는 플레이어 fight 스프라이트를 공유: 5열 × 5행
-        const fw = 205   // fight.png 프레임 폭 (1025 / 5)
-        const fh = 205   // fight.png 프레임 높이 (1025 / 5)
-        // 4행 사용 (DOWN 방향 위주로 반격 표현)
-        this.spriteAnimation.addAnimation({
-            name: 'counter_attack',
-            frames: createFramesFromGrid(0, fh * 3, fw, fh, 5, 5),
-            frameRate: 12
-        })
+        setupMonsterAnimations(this.spriteAnimation)
     }
 
     setSpriteImage(image: HTMLImageElement): void {
@@ -176,7 +141,7 @@ export class Monster {
                 this.isCounterAttacking = false
             }
             this.isMoving = false
-            this.spriteAnimation.play('counter_attack')
+            this.spriteAnimation.play('monster_counter_attack')
             this.spriteAnimation.update(deltaTime)
             return
         }
@@ -255,7 +220,7 @@ export class Monster {
         }
 
         // 애니메이션
-        const animName = this.isMoving ? `walk_${this.direction}` : `idle_${this.direction}`
+        const animName = this.isMoving ? `monster_walk_${this.direction}` : `monster_idle_${this.direction}`
         this.spriteAnimation.play(animName)
         this.spriteAnimation.update(deltaTime)
     }

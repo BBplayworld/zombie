@@ -5,6 +5,7 @@ export interface DamageText {
     y: number
     text: string
     color: string
+    strokeColor: string
     lifetime: number
     age: number
     vx: number
@@ -17,20 +18,31 @@ export class CombatTextManager {
 
     public add(x: number, y: number, text: string, type: 'normal' | 'critical' | 'player_hit' | 'heal') {
         const isCrit = type === 'critical'
-        let color = '#ffffff'
-        if (type === 'player_hit') color = '#ff3333'
-        else if (type === 'critical') color = '#ffcc00'
-        else if (type === 'heal') color = '#33ff33'
 
-        const scale = isCrit ? 4 : 2
-        const lifetime = isCrit ? 1.0 : 0.8
+        let scale = isCrit ? 4 : 2
+        let lifetime = isCrit ? 1.0 : 0.8
+        let color = '#ffffff'
+        let strokeColor = '#000000'
+
+        if (type === 'player_hit') {
+            color = '#961a1aff'
+            strokeColor = '#ffffff' // 플레이어 피격은 하얀색 윤곽선으로 확실히 돋보이게 처리
+        }
+        else if (type === 'critical') {
+            color = '#ffcc00d5'
+            strokeColor = '#ffffff'
+        }
+        else if (type === 'heal') {
+            color = '#33ff33'
+            strokeColor = '#003300'
+        }
 
         // 대각선 위쪽으로 퍼지는 속도
         const vx = (Math.random() - 0.5) * 80
         const vy = -(60 + Math.random() * 40)
 
         this.texts.push({
-            x, y, text, color,
+            x, y, text, color, strokeColor,
             lifetime, age: 0,
             vx, vy, scale
         })
@@ -85,14 +97,14 @@ export class CombatTextManager {
             }
 
             // Text shadow for impact
-            ctx.shadowColor = 'rgba(0,0,0,0.8)'
-            ctx.shadowBlur = 4
+            ctx.shadowColor = t.strokeColor === '#ffffff' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)'
+            ctx.shadowBlur = t.strokeColor === '#ffffff' ? 6 : 4
             ctx.shadowOffsetX = 2
             ctx.shadowOffsetY = 2
 
             // 테두리 두껍게
-            ctx.lineWidth = 3
-            ctx.strokeStyle = '#000000'
+            ctx.lineWidth = t.strokeColor === '#ffffff' ? 4 : 3
+            ctx.strokeStyle = t.strokeColor
             ctx.strokeText(t.text, 0, 0)
 
             // 내부 채우기

@@ -111,9 +111,9 @@ export function registerMoveAnimations(
     for (const [dir, img] of Object.entries(mapping)) {
         const frames = buildGridFrames(img, MOVE_GRID.cols, MOVE_GRID.rows);
         // 걷기: 모든 프레임 순환
-        spriteAnimation.addAnimation({ name: `walk_${dir}`, frames, frameRate: 8 });
+        spriteAnimation.addAnimation({ name: `player_walk_${dir}`, frames, frameRate: 8 });
         // 대기: 첫 번째 프레임 고정
-        spriteAnimation.addAnimation({ name: `idle_${dir}`, frames: [frames[0]], frameRate: 1 });
+        spriteAnimation.addAnimation({ name: `player_idle_${dir}`, frames: [frames[0]], frameRate: 1 });
     }
 }
 
@@ -135,7 +135,7 @@ export function registerSpaceAnimations(
     for (const [dir, img] of Object.entries(mapping)) {
         const frames = buildGridFrames(img, SPACE_CHAR_GRID.cols, SPACE_CHAR_GRID.rows);
         spriteAnimation.addAnimation({
-            name: `char_attack_${dir}`,
+            name: `player_skills_action_space_${dir}`,
             frames,
             frameRate: 8,
             loop: false,
@@ -161,7 +161,7 @@ export function registerSkillCharAnimations(
     for (const [dir, img] of Object.entries(mapping)) {
         const frames = buildGridFrames(img, SKILLS_CHAR_GRID.cols, SKILLS_CHAR_GRID.rows);
         spriteAnimation.addAnimation({
-            name: `char_skill_${dir}`,
+            name: `player_skills_action_qwer_${dir}`,
             frames,
             frameRate: 8,
             loop: false,
@@ -190,7 +190,7 @@ export function registerDamageAnimations(
     for (const [dir, img] of Object.entries(mapping)) {
         const frames = buildGridFrames(img, DAMAGE_CHAR_GRID.cols, DAMAGE_CHAR_GRID.rows);
         spriteAnimation.addAnimation({
-            name: `char_damage_${dir}`,
+            name: `player_damage_${dir}`,
             frames,
             frameRate: 8,
             loop: false,
@@ -233,7 +233,7 @@ export function registerSkillAnimations(
     // 모든 방향에 동일한 프레임 사용
     for (const dir of ["up", "down", "left", "right"] as const) {
         effectAnimation.addAnimation({
-            name: `effect_${key}_${dir}`,
+            name: `player_skills_effect_${key}_${dir}`,
             frames,
             frameRate,
             loop: false,

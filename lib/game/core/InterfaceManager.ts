@@ -251,8 +251,9 @@ export class InterfaceManager {
                     ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
                     ctx.beginPath();
                     ctx.moveTo(size / 2, size / 2);
-                    // -Math.PI / 2 (12시 방향)을 시작으로 남은 시간만큼 아크 그리기
-                    ctx.arc(size / 2, size / 2, size * 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
+                    // -Math.PI / 2 (12시 방향)을 시작으로 남은 비율만큼 역방향(반시계)으로 아크를 그리면, 
+                    // 빈 공간이 시계방향으로 돌아가며 진행되는 효과가 납니다.
+                    ctx.arc(size / 2, size / 2, size * 1.5, -Math.PI / 2, -Math.PI / 2 - Math.PI * 2 * ratio, true);
                     ctx.closePath();
                     ctx.fill();
                     ctx.restore();
@@ -264,7 +265,9 @@ export class InterfaceManager {
                     ctx.textBaseline = "middle";
                     ctx.shadowColor = "black";
                     ctx.shadowBlur = 4;
-                    ctx.fillText(Math.ceil(currentCd).toString(), size / 2, size / 2 + 2);
+                    // 남은 시간을 소수점 첫째자리까지 표시 (1보다 작을 경우만, 아니면 정수표시)
+                    const timeText = currentCd < 1.0 ? currentCd.toFixed(1) : Math.ceil(currentCd).toString();
+                    ctx.fillText(timeText, size / 2, size / 2 + 2);
                     ctx.shadowBlur = 0;
                 }
             }

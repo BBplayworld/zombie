@@ -1,4 +1,4 @@
-import { Monster } from '../entities/Monster'
+import { Monster } from '../entities/monster/Monster'
 import { Vector2 } from '../utils/math'
 
 interface MapRect { x: number; y: number; w: number; h: number }
