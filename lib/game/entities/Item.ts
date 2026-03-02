@@ -13,9 +13,9 @@ export class Item {
         this.data = data
     }
 
-    static createRandom(x: number, y: number): Item | null {
-        // 챕터 1 설정 사용 (임시)
-        const config = getZoneConfig(1).itemDropConfig
+    static createRandom(x: number, y: number, zoneId: number = 1): Item | null {
+        // 드랍 설정 구하기
+        const config = getZoneConfig(zoneId).itemDropConfig
         if (!config) return null
 
         // 1. 드랍 확률 체크 (Global Drop Rate)
@@ -25,11 +25,6 @@ export class Item {
         let rarity: ItemRarity = 'Common'
         const rand = Math.random()
         let accum = 0
-
-        // Normalize probabilities if they don't sum to 1? 
-        // Assuming they are relative weights or exact probabilities that sum to <= 1.
-        // Let's assume they are simple probabilities and we check in order of rarity value?
-        // Or simply iterate.
 
         // Convert map to array for sorting/iteration
         const rarityList = Object.entries(config.rarities).map(([key, conf]) => ({
@@ -85,8 +80,8 @@ export class Item {
             stats[statType] = { flat: flatVal, percent: percentVal }
         })
 
-        // 4. 타입 결정
-        const types: ItemType[] = ['Helmet', 'Armor', 'Weapon']
+        // 4. 타입 결정 (6부위 전체)
+        const types: ItemType[] = ['Helmet', 'Armor', 'Weapon', 'Shield', 'Boots', 'Ring']
         const type = types[Math.floor(Math.random() * types.length)]
 
         // 5. 이름 생성 (locale별)
@@ -200,13 +195,16 @@ export class Item {
         return ['Helmet', 'Armor', 'Weapon', 'Shield', 'Boots', 'Ring'].includes(type)
     }
 
+    /** 부위별 이미지 키 반환 */
     getImageKey(): string {
-        // 타입별 이미지 키 반환
         switch (this.data.type) {
-            case 'Helmet': return 'helmet'
-            case 'Armor': return 'armor'
-            case 'Weapon': return 'weapon'
-            default: return 'helmet' // Fallback
+            case 'Helmet': return 'item_helmet'
+            case 'Armor': return 'item_armor'
+            case 'Weapon': return 'item_weapon'
+            case 'Shield': return 'item_shield'
+            case 'Boots': return 'item_boots'
+            case 'Ring': return 'item_ring'
+            default: return 'item_helmet'
         }
     }
 }

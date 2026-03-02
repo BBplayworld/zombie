@@ -39,9 +39,3 @@ export {
     selectRandomMonsterConfig
 } from './spawn'
 
-// 애니메이션 유틸리티
-export {
-    setupBasicAnimations,
-    playStateAnimation,
-    playAttackAnimation
-} from './animation'

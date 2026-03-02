@@ -47,7 +47,7 @@ export const ZONE_CONFIGS: Record<number, ZoneConfig> = {
 
             // 몬스터 스폰 설정
             monsterConfig: {
-                spawnCount: 15,
+                spawnCount: 10,
                 regenTime: 60,
                 autoAttack: false
             }
@@ -114,18 +114,79 @@ export const ZONE_CONFIGS: Record<number, ZoneConfig> = {
         monsters: [
             {
                 id: 'mon_1',
-                name: 'Walker',
-                imagePath: '/assets/zone-1/monster/mon-1.png',
-                moveSpeed: 5,
+                name: 'Skeleton-normal-1',
+                moveImagePath: '/assets/zone-1/monster/monster-1-move.png',
+                moveImageGrid: { cols: 1, rows: 2 },
+                attackImagePath: '/assets/zone-1/monster/monster-1-attack.png',
+                attackImageGrid: { cols: 1, rows: 2 },
+                attackSoundPath: '/assets/zone-1/monster/sounds/skeleton-attack.mp3',
+                moveSpeed: 3,
                 autoAttack: true,
                 regenTime: 30,
-                detectionRange: 200,
+                detectionRange: 300,
                 stats: { Vigor: 10, Spirit: 5, Might: 10, Agility: 5, Luck: 5 }
             },
         ],
 
         // 맵 데이터 생성
         mapData: zone1MapDataConfig as MapData
+    },
+
+    // ── VILLAGE (마을) ──────────────────────────────────────────────────────
+    99: {
+        id: 99,
+        name: 'Village: Sanctuary',
+
+        openWorldMapConfig: {
+            worldSize: {
+                width: 1024,
+                height: 1024
+            },
+            walkableArea: {
+                minX: -480,
+                maxX: 480,
+                minY: -480,
+                maxY: 480
+            },
+            mapType: 'zone',
+            portals: [
+            ]
+        },
+
+        gameplayConfig: {
+            collisionYOffset: 80,
+            monsterConfig: {
+                spawnCount: 0,  // 마을에는 몬스터 없음
+                regenTime: 999,
+                autoAttack: false
+            }
+        },
+
+        itemDropConfig: {
+            globalDropRate: 0,
+            rarities: {
+                'Common': { color: '#fff', dropChance: 0, optionCount: 0, statRanges: { flat: { min: 0, max: 0, chance: 0 }, percent: { min: 0, max: 0, chance: 0 } } },
+                'Uncommon': { color: '#1eff00', dropChance: 0, optionCount: 0, statRanges: { flat: { min: 0, max: 0, chance: 0 }, percent: { min: 0, max: 0, chance: 0 } } },
+                'Rare': { color: '#0070dd', dropChance: 0, optionCount: 0, statRanges: { flat: { min: 0, max: 0, chance: 0 }, percent: { min: 0, max: 0, chance: 0 } } },
+                'Epic': { color: '#a335ee', dropChance: 0, optionCount: 0, statRanges: { flat: { min: 0, max: 0, chance: 0 }, percent: { min: 0, max: 0, chance: 0 } } },
+                'Legendary': { color: '#ff8000', dropChance: 0, optionCount: 0, statRanges: { flat: { min: 0, max: 0, chance: 0 }, percent: { min: 0, max: 0, chance: 0 } } },
+            }
+        },
+
+        assetConfig: {
+            ...PLAYER_ASSET_CONFIG,
+            mapBackground: '/assets/village/map/map.png'
+        } as any,
+
+        monsters: [],   // 마을에 몬스터 없음
+
+        mapData: {
+            width: 10,
+            height: 10,
+            tiles: [],
+            walkableTile: '.',
+            startPosition: { x: 0, y: 0 }
+        } as MapData
     },
 }
 

@@ -1,9 +1,11 @@
+import fs from 'fs';
 import sharp from 'sharp';
 import path from 'path';
 
 async function analyzeInventory() {
     try {
-        const imagePath = path.resolve(__dirname, '../public/assets/zone-1/player/inventory-debug.png');
+        const projectRoot = process.cwd();
+        const imagePath = path.resolve(projectRoot, 'public/assets/main/player/inventory-debug.png');
         const image = sharp(imagePath);
         const metadata = await image.metadata();
 
@@ -100,13 +102,27 @@ async function analyzeInventory() {
             }
         }
 
+        // --- Scaling Logic ---
+        const targetWidth = 680;
+        const targetHeight = 680;
+        const scaleX = targetWidth / info.width;
+        const scaleY = targetHeight / info.height;
+
+        const spX = (val: number) => Math.round(val * scaleX);
+        const spY = (val: number) => Math.round(val * scaleY);
+
+        // Scaled coordinates
+        const sRedX = spX(minRedX), sRedY = spY(minRedY);
+        const sRedW = spX(maxRedX - minRedX), sRedH = spY(maxRedY - minRedY);
+
+        const sYellowX = spX(minYellowX), sYellowY = spY(minYellowY);
+        const sYellowW = spX(maxYellowX - minYellowX), sYellowH = spY(maxYellowY - minYellowY);
+
         console.log('--- Red Area (Items) ---');
-        console.log(`X: ${minRedX}, Y: ${minRedY}`);
-        console.log(`Width: ${maxRedX - minRedX}, Height: ${maxRedY - minRedY}`);
+        console.log(`X: ${sRedX}, Y: ${sRedY}\nWidth: ${sRedW}, Height: ${sRedH}`);
 
         console.log('--- Yellow Area (Stats) ---');
-        console.log(`X: ${minYellowX}, Y: ${minYellowY}`);
-        console.log(`Width: ${maxYellowX - minYellowX}, Height: ${maxYellowY - minYellowY}`);
+        console.log(`X: ${sYellowX}, Y: ${sYellowY}\nWidth: ${sYellowW}, Height: ${sYellowH}`);
 
         console.log('--- Blue Regions (Equipment Slots) ---');
         // Sort regions by Y then X to order them logicallly
@@ -115,9 +131,52 @@ async function analyzeInventory() {
             return a.minX - b.minX;
         });
 
-        blueRegions.forEach((r, i) => {
-            console.log(`Slot ${i}: X:${r.minX}, Y:${r.minY}, W:${r.maxX - r.minX}, H:${r.maxY - r.minY}`);
+        const scaledBlueRegions = blueRegions.map(r => ({
+            minX: spX(r.minX),
+            minY: spY(r.minY),
+            width: spX(r.maxX - r.minX),
+            height: spY(r.maxY - r.minY)
+        }));
+
+        scaledBlueRegions.forEach((r, i) => {
+            console.log(`Slot ${i}: X:${r.minX}, Y:${r.minY}, W:${r.width}, H:${r.height}`);
         });
+
+        // --- Automatically update Inventory.ts ---
+        const configPath = path.resolve(projectRoot, 'lib/game/config/Inventory.ts');
+
+        if (fs.existsSync(configPath)) {
+            let configContent = fs.readFileSync(configPath, 'utf-8');
+
+            // Replace statsArea (Yellow)
+            configContent = configContent.replace(
+                /(statsArea:\s*\{\s*x:\s*)\d+(,\s*y:\s*)\d+(,\s*width:\s*)\d+(,\s*height:\s*)\d+/,
+                `$1${sYellowX}$2${sYellowY}$3${sYellowW}$4${sYellowH}`
+            );
+
+            // Replace itemArea (Red)
+            configContent = configContent.replace(
+                /(itemArea:\s*\{\s*x:\s*)\d+(,\s*y:\s*)\d+(,\s*width:\s*)\d+(,\s*height:\s*)\d+/,
+                `$1${sRedX}$2${sRedY}$3${sRedW}$4${sRedH}`
+            );
+
+            // Replace equipmentSlots (Blue)
+            const slotNames = ['Helmet', 'Weapon', 'Shield', 'Armor', 'Boots', 'Ring'];
+            const slotsStr = scaledBlueRegions.map((r, i) => {
+                const name = slotNames[i] || `Slot${i}`;
+                return `        '${name}': { x: ${r.minX}, y: ${r.minY}, width: ${r.width}, height: ${r.height} }`;
+            }).join(',\n');
+
+            configContent = configContent.replace(
+                /(equipmentSlots:\s*\{)[\s\S]*?(    \},)/,
+                `$1\n${slotsStr}\n$2`
+            );
+
+            fs.writeFileSync(configPath, configContent, 'utf-8');
+            console.log('\nSuccessfully updated ' + configPath);
+        } else {
+            console.error('\nCould not find ' + configPath);
+        }
 
     } catch (error) {
         console.error('Error analyzing image:', error);

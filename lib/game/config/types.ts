@@ -129,7 +129,7 @@ export interface MonsterSpawnConfig {
 // ============================================================================
 
 export interface AssetConfig {
-    player: string
+    character_player: string
     /** space 평타 이펙트 (예비, 실제 로드는 PlayerManager에서 직접 URL 지정) */
     space?: string
     /** 단일 맵 이미지 (선택, mapTile1~4 대신 사용 가능) */
@@ -150,19 +150,22 @@ export interface AssetConfig {
     mapTile14?: string
     mapTile15?: string
     mapTile16?: string
-    helmet: string
-    armor: string
-    weapon: string
-    window: string
+    item_helmet: string
+    item_armor: string
+    item_weapon: string
+    item_shield?: string
+    item_boots?: string
+    item_ring?: string
+    interface_window: string
     /** HP 바 프레임 이미지 */
-    hpBar?: string
+    interface_hpBar?: string
     /** 인벤토리 아이콘 이미지 */
-    inventoryIcon?: string
+    interface_inventoryIcon?: string
     /** 스킬 아이콘 이미지 */
-    skillIcon_q?: string
-    skillIcon_w?: string
-    skillIcon_e?: string
-    skillIcon_r?: string
+    interface_skill_q?: string
+    interface_skill_w?: string
+    interface_skill_e?: string
+    interface_skill_r?: string
 }
 
 // ============================================================================
@@ -181,7 +184,11 @@ export interface PlayerConfig {
 export interface MonsterDetailConfig {
     id: string
     name: string
-    imagePath: string
+    moveImagePath: string
+    moveImageGrid: { cols: number, rows: number }
+    attackImagePath: string
+    attackImageGrid: { cols: number, rows: number }
+    attackSoundPath?: string
     moveSpeed: number
     autoAttack: boolean
     regenTime: number

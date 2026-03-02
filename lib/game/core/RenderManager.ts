@@ -84,6 +84,43 @@ export class RenderManager {
         }
     }
 
+    /**
+     * 월드만 렌더 (맵 + 엔티티 + 전투텍스트). 마을 NPC/포털 등 게임 오브젝트는 이후에 그림.
+     */
+    renderWorld(
+        ZoneMap: ZoneMap,
+        camera: Camera,
+        player: Player,
+        monsters: Monster[],
+        items: ItemDrop[],
+        combatTextManager: CombatTextManager
+    ): void {
+        this.clearScreen()
+        this.ctx.save()
+        ZoneMap.render(this.ctx, camera)
+        this.renderEntities(player, monsters, items, camera)
+        combatTextManager.render(this.ctx, camera)
+        this.ctx.restore()
+    }
+
+    /**
+     * UI만 렌더 (인벤토리, 미니맵, HUD). 마을/포털 오브젝트 위에 그림.
+     */
+    renderOverlay(
+        ZoneMap: ZoneMap,
+        camera: Camera,
+        player: Player,
+        monsters: Monster[],
+        gameState: string,
+        inventoryManager: InventoryManager,
+    ): void {
+        const mapRect = ZoneMap.getMapScreenRect(camera)
+        this.renderUI(player, camera, gameState, inventoryManager, monsters, mapRect)
+        if (player.isDamaged) {
+            this.renderHitVignette()
+        }
+    }
+
     private clearScreen(): void {
         this.ctx.fillStyle = '#000'
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
@@ -93,7 +130,7 @@ export class RenderManager {
         const entities: (Player | Monster | ItemDrop)[] = [...items, player, ...monsters]
         entities.sort((a, b) => a.position.y - b.position.y)
 
-        const playerImage = this.resourceLoader.getImage('player')
+        const playerImage = this.resourceLoader.getImage('character_player')
 
         entities.forEach(entity => {
             if (entity instanceof Player) {
@@ -102,7 +139,7 @@ export class RenderManager {
             } else if (entity instanceof Monster) {
                 entity.render(this.ctx, camera)
             } else if (entity instanceof ItemDrop) {
-                entity.render(this.ctx, camera, this.resourceLoader)
+                entity.render(this.ctx, camera)
             }
         })
     }

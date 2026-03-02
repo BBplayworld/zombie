@@ -35,11 +35,12 @@ export default function GameCanvas() {
     const [totalCount, setTotalCount] = useState(0)
     const [selectedLang, setSelectedLang] = useState<'ko' | 'en'>(currentLang)
     const [isTooSmall, setIsTooSmall] = useState(false)
+    const [hasSave, setHasSave] = useState(false)  // 저장 데이터 존재 여부
 
     // BGM 오디오 상태
     const audioRef = useRef<HTMLAudioElement>(null)
-    const [isMuted, setIsMuted] = useState(false)
-    const [volume, setVolume] = useState(0.3)
+    const [isMuted, setIsMuted] = useState(true)
+    const [volume, setVolume] = useState(0.1)
 
     useEffect(() => {
         if (audioRef.current) {
@@ -193,11 +194,16 @@ export default function GameCanvas() {
 
                 setLoadingProgress(5)
                 await engine.loadResources()
+
+                // 저장 데이터 로딩
+                const loaded = await engine.loadSaveData()
+                setHasSave(loaded)
+
                 setLoadingProgress(100)
                 setGameState('ready')
             } catch (e) {
                 console.error('Game init failed:', e)
-                engineInitRef.current = false // 실패 시 재시도 가능
+                engineInitRef.current = false
             }
         }
         init()
@@ -213,7 +219,11 @@ export default function GameCanvas() {
         }
     }, [])
 
-    const startGame = () => {
+    const startGame = (newGame: boolean = false) => {
+        if (newGame) {
+            // 새 게임: 저장 삭제 후 시작
+            fetch('/api/save', { method: 'DELETE' }).catch(() => { })
+        }
         gameEngineRef.current?.start()
         setGameState('playing')
         if (audioRef.current) {
@@ -304,8 +314,15 @@ export default function GameCanvas() {
                                         한국어
                                     </button>
                                 </div>
-                                <button className={styles.startBtn} onClick={startGame}>
-                                    <span className={styles.startBtnInner}>{t('game.start')}</span>
+                                {hasSave && (
+                                    <button className={styles.startBtn} onClick={() => startGame(false)} style={{ marginBottom: 10 }}>
+                                        <span className={styles.startBtnInner}>📂 계속하기</span>
+                                    </button>
+                                )}
+                                <button className={hasSave ? styles.pauseBtn : styles.startBtn} onClick={() => startGame(!hasSave ? false : true)}>
+                                    <span className={hasSave ? styles.pauseBtnInner : styles.startBtnInner}>
+                                        {hasSave ? '🆕 새 게임' : t('game.start')}
+                                    </span>
                                 </button>
                             </div>
                         </div>

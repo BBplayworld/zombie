@@ -6,7 +6,7 @@ import { Item } from './Item'
  */
 export class Inventory {
     items: Item[] = []
-    capacity: number = 30 // Default capacity
+    capacity: number = 21 // 3 cols x 7 rows
 
     constructor() {
         this.items = []

@@ -1,40 +1,59 @@
-import { SpriteAnimation, createFramesFromGrid } from '../../systems/SpriteAnimation';
+import { SpriteAnimation } from '../../systems/SpriteAnimation';
+import type { MonsterDetailConfig } from '../../config/types';
 
-export function setupMonsterAnimations(spriteAnimation: SpriteAnimation): void {
-    const frameWidth = 341;
-    const frameHeight = 341;
+function buildGridFrames(
+    image: HTMLImageElement,
+    cols: number,
+    rows: number,
+): { x: number; y: number; width: number; height: number }[] {
+    const fw = image.naturalWidth / cols;
+    const fh = image.naturalHeight / rows;
+    const frames: { x: number; y: number; width: number; height: number }[] = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            frames.push({ x: c * fw, y: r * fh, width: fw, height: fh });
+        }
+    }
+    return frames;
+}
 
-    // ── 이동 애니메이션 (3×3 그리드) ─────────────────
-    spriteAnimation.addAnimation({
-        name: 'monster_walk_down', frames: createFramesFromGrid(0, 0, frameWidth, frameHeight, 3, 3), frameRate: 6
-    });
-    spriteAnimation.addAnimation({
-        name: 'monster_walk_left', frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3), frameRate: 6
-    });
-    spriteAnimation.addAnimation({
-        name: 'monster_walk_up', frames: createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 3, 3), frameRate: 6
-    });
-    spriteAnimation.addAnimation({
-        name: 'monster_walk_right', frames: createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 3, 3), frameRate: 6
-    });
+export function registerMonsterAnimations(
+    spriteAnimation: SpriteAnimation,
+    moveImage: HTMLImageElement | null,
+    attackImage: HTMLImageElement | null,
+    config: MonsterDetailConfig
+): void {
+    if (moveImage) {
+        const { cols, rows } = config.moveImageGrid;
+        const mapping: Record<string, HTMLImageElement> = {
+            left: moveImage,
+            up: moveImage,
+            right: moveImage,
+            down: moveImage,
+        };
 
-    // ── Idle 애니메이션 ──────────────────────────────
-    const idleDown = createFramesFromGrid(0, 0, frameWidth, frameHeight, 1, 3)[0];
-    const idleLeft = createFramesFromGrid(0, frameHeight, frameWidth, frameHeight, 1, 3)[0];
-    const idleRight = createFramesFromGrid(0, frameHeight * 2, frameWidth, frameHeight, 1, 3)[0];
+        for (const [dir, img] of Object.entries(mapping)) {
+            const frames = buildGridFrames(img, cols, rows);
+            // 걷기: 모든 프레임 순환
+            spriteAnimation.addAnimation({ name: `monster_walk_${dir}`, frames, frameRate: 6 });
+            // 대기: 첫 번째 프레임 고정
+            spriteAnimation.addAnimation({ name: `monster_idle_${dir}`, frames: [frames[0]], frameRate: 2 });
+        }
+    }
 
-    spriteAnimation.addAnimation({ name: 'monster_idle_down', frames: [idleDown], frameRate: 1 });
-    spriteAnimation.addAnimation({ name: 'monster_idle_left', frames: [idleLeft], frameRate: 1 });
-    spriteAnimation.addAnimation({ name: 'monster_idle_right', frames: [idleRight], frameRate: 1 });
-    spriteAnimation.addAnimation({ name: 'monster_idle_up', frames: [idleLeft], frameRate: 1 });
+    if (attackImage) {
+        const { cols, rows } = config.attackImageGrid;
+        const mapping: Record<string, HTMLImageElement> = {
+            left: attackImage,
+            up: attackImage,
+            right: attackImage,
+            down: attackImage,
+        };
 
-    // ── 반격 애니메이션 — fight.png 5×5 그리드 ───────
-    const fw = 205;   // fight.png 프레임 폭 (1025 / 5)
-    const fh = 205;   // fight.png 프레임 높이 (1025 / 5)
-    // 4행 사용 (DOWN 방향 위주로 반격 표현)
-    spriteAnimation.addAnimation({
-        name: 'monster_counter_attack',
-        frames: createFramesFromGrid(0, fh * 3, fw, fh, 5, 5),
-        frameRate: 12
-    });
+        for (const [dir, img] of Object.entries(mapping)) {
+            const frames = buildGridFrames(img, cols, rows);
+            // 공격: 모든 프레임 순환
+            spriteAnimation.addAnimation({ name: `monster_attack_${dir}`, frames, frameRate: 8 });
+        }
+    }
 }

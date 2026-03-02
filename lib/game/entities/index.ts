@@ -3,4 +3,4 @@
  */
 
 export { Player } from './player/Player'
-export { Monster } from './Monster'
+export { Monster } from './monster/Monster'

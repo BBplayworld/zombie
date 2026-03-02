@@ -1,0 +1,416 @@
+{
+  "version": 1,
+  "savedAt": "2026-03-02T12:17:07.177Z",
+  "player": {
+    "level": 4,
+    "exp": 396,
+    "hp": 660,
+    "lastZone": 1,
+    "lastX": 749,
+    "lastY": -201
+  },
+  "inventory": [
+    {
+      "id": "item_1772443854770_bv7xm",
+      "name": "Sturdy Ring",
+      "nameLocale": {
+        "en": "Sturdy Ring",
+        "ko": "생명력의 반지"
+      },
+      "type": "Ring",
+      "rarity": "Common",
+      "stats": {
+        "Vigor": {
+          "flat": 10,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772440093718_kvqmf",
+      "name": "Sharp Helmet",
+      "nameLocale": {
+        "en": "Sharp Helmet",
+        "ko": "정밀한 투구"
+      },
+      "type": "Helmet",
+      "rarity": "Common",
+      "stats": {
+        "Luck": {
+          "flat": 6,
+          "percent": 0.017
+        }
+      }
+    },
+    {
+      "id": "item_1772440163613_x79hx",
+      "name": "Powerful Shield",
+      "nameLocale": {
+        "en": "Powerful Shield",
+        "ko": "힘찬 방패"
+      },
+      "type": "Shield",
+      "rarity": "Common",
+      "stats": {
+        "Might": {
+          "flat": 1,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772443861370_t54in",
+      "name": "Precise Ring of Might",
+      "nameLocale": {
+        "en": "Precise Ring of Might",
+        "ko": "예리한 반지 의 용맹"
+      },
+      "type": "Ring",
+      "rarity": "Uncommon",
+      "stats": {
+        "Luck": {
+          "flat": 15,
+          "percent": 0
+        },
+        "Might": {
+          "flat": 17,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772443901634_ggo2d",
+      "name": "Hardy Weapon of Mind",
+      "nameLocale": {
+        "en": "Hardy Weapon of Mind",
+        "ko": "내구성의 무기 의 마나"
+      },
+      "type": "Weapon",
+      "rarity": "Rare",
+      "stats": {
+        "Vigor": {
+          "flat": 30,
+          "percent": 0.082
+        },
+        "Spirit": {
+          "flat": 35,
+          "percent": 0.083
+        },
+        "Might": {
+          "flat": 33,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772445886003_0at8l",
+      "name": "Durable Ring of Agility",
+      "nameLocale": {
+        "en": "Durable Ring of Agility",
+        "ko": "강건한 반지 의 속도"
+      },
+      "type": "Ring",
+      "rarity": "Rare",
+      "stats": {
+        "Vigor": {
+          "flat": 27,
+          "percent": 0.059
+        },
+        "Agility": {
+          "flat": 34,
+          "percent": 0.119
+        },
+        "Spirit": {
+          "flat": 40,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772445891402_qrydt",
+      "name": "Wise Weapon",
+      "nameLocale": {
+        "en": "Wise Weapon",
+        "ko": "영적인 무기"
+      },
+      "type": "Weapon",
+      "rarity": "Common",
+      "stats": {
+        "Spirit": {
+          "flat": 1,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772447019608_r3rl2",
+      "name": "Arcane Shield of Sight",
+      "nameLocale": {
+        "en": "Arcane Shield of Sight",
+        "ko": "신비로운 방패 의 시야"
+      },
+      "type": "Shield",
+      "rarity": "Rare",
+      "stats": {
+        "Spirit": {
+          "flat": 36,
+          "percent": 0.056
+        },
+        "Luck": {
+          "flat": 33,
+          "percent": 0.056
+        },
+        "Might": {
+          "flat": 15,
+          "percent": 0.112
+        }
+      }
+    },
+    {
+      "id": "item_1772447026308_7pw2b",
+      "name": "Hardy Helmet of Agility",
+      "nameLocale": {
+        "en": "Hardy Helmet of Agility",
+        "ko": "내구성의 투구 의 민첩"
+      },
+      "type": "Helmet",
+      "rarity": "Uncommon",
+      "stats": {
+        "Vigor": {
+          "flat": 7,
+          "percent": 0
+        },
+        "Agility": {
+          "flat": 13,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772452776302_acprf",
+      "name": "Sharp Weapon",
+      "nameLocale": {
+        "en": "Sharp Weapon",
+        "ko": "통찰의 무기"
+      },
+      "type": "Weapon",
+      "rarity": "Common",
+      "stats": {
+        "Luck": {
+          "flat": 9,
+          "percent": 0.032
+        }
+      }
+    },
+    {
+      "id": "item_1772452780135_get79",
+      "name": "Durable Ring of Strength",
+      "nameLocale": {
+        "en": "Durable Ring of Strength",
+        "ko": "생명력의 반지 의 용맹"
+      },
+      "type": "Ring",
+      "rarity": "Uncommon",
+      "stats": {
+        "Vigor": {
+          "flat": 8,
+          "percent": 0.052
+        },
+        "Might": {
+          "flat": 18,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772443854771_ft18o",
+      "name": "Fierce Weapon",
+      "nameLocale": {
+        "en": "Fierce Weapon",
+        "ko": "맹렬한 무기"
+      },
+      "type": "Weapon",
+      "rarity": "Common",
+      "stats": {
+        "Might": {
+          "flat": 8,
+          "percent": 0
+        }
+      }
+    },
+    {
+      "id": "item_1772440279655_mktv7",
+      "name": "Spiritual Weapon of Sight",
+      "nameLocale": {
+        "en": "Spiritual Weapon of Sight",
+        "ko": "현명한 무기 의 시야"
+      },
+      "type": "Weapon",
+      "rarity": "Uncommon",
+      "stats": {
+        "Spirit": {
+          "flat": 15,
+          "percent": 0
+        },
+        "Luck": {
+          "flat": 5,
+          "percent": 0.031
+        }
+      }
+    },
+    {
+      "id": "item_1772452840464_6itu7",
+      "name": "Focused Ring of Wisdom",
+      "nameLocale": {
+        "en": "Focused Ring of Wisdom",
+        "ko": "집중된 반지 의 마나"
+      },
+      "type": "Ring",
+      "rarity": "Rare",
+      "stats": {
+        "Luck": {
+          "flat": 35,
+          "percent": 0.053
+        },
+        "Spirit": {
+          "flat": 13,
+          "percent": 0.09
+        },
+        "Might": {
+          "flat": 24,
+          "percent": 0.117
+        }
+      }
+    },
+    {
+      "id": "item_1772447031441_3g15h",
+      "name": "Mystic Armor",
+      "nameLocale": {
+        "en": "Mystic Armor",
+        "ko": "영적인 갑옷"
+      },
+      "type": "Armor",
+      "rarity": "Common",
+      "stats": {
+        "Spirit": {
+          "flat": 10,
+          "percent": 0
+        }
+      }
+    }
+  ],
+  "equipment": {
+    "Helmet": {
+      "id": "item_1772438425234_8kg82",
+      "name": "Hardy Helmet",
+      "nameLocale": {
+        "en": "Hardy Helmet",
+        "ko": "견고한 투구"
+      },
+      "type": "Helmet",
+      "rarity": "Common",
+      "stats": {
+        "Vigor": {
+          "flat": 6,
+          "percent": 0
+        }
+      }
+    },
+    "Shield": {
+      "id": "item_1772440090035_npiay",
+      "name": "Sturdy Shield of Sight",
+      "nameLocale": {
+        "en": "Sturdy Shield of Sight",
+        "ko": "생명력의 방패 의 통찰"
+      },
+      "type": "Shield",
+      "rarity": "Uncommon",
+      "stats": {
+        "Vigor": {
+          "flat": 12,
+          "percent": 0
+        },
+        "Luck": {
+          "flat": 19,
+          "percent": 0.065
+        }
+      }
+    },
+    "Ring": {
+      "id": "item_1772440166113_11t7t",
+      "name": "Sharp Ring of Vitality",
+      "nameLocale": {
+        "en": "Sharp Ring of Vitality",
+        "ko": "정밀한 반지 의 생명"
+      },
+      "type": "Ring",
+      "rarity": "Uncommon",
+      "stats": {
+        "Luck": {
+          "flat": 20,
+          "percent": 0.035
+        },
+        "Vigor": {
+          "flat": 19,
+          "percent": 0.075
+        }
+      }
+    },
+    "Boots": {
+      "id": "item_1772440171746_ljlew",
+      "name": "Strong Boots",
+      "nameLocale": {
+        "en": "Strong Boots",
+        "ko": "강력한 장화"
+      },
+      "type": "Boots",
+      "rarity": "Common",
+      "stats": {
+        "Might": {
+          "flat": 4,
+          "percent": 0
+        }
+      }
+    },
+    "Weapon": {
+      "id": "item_1772440335785_hdh17",
+      "name": "Wise Weapon",
+      "nameLocale": {
+        "en": "Wise Weapon",
+        "ko": "신비로운 무기"
+      },
+      "type": "Weapon",
+      "rarity": "Common",
+      "stats": {
+        "Spirit": {
+          "flat": 1,
+          "percent": 0
+        }
+      }
+    },
+    "Armor": {
+      "id": "item_1772447093520_61axu",
+      "name": "Wise Armor of Force",
+      "nameLocale": {
+        "en": "Wise Armor of Force",
+        "ko": "현명한 갑옷 의 힘"
+      },
+      "type": "Armor",
+      "rarity": "Rare",
+      "stats": {
+        "Spirit": {
+          "flat": 19,
+          "percent": 0
+        },
+        "Might": {
+          "flat": 37,
+          "percent": 0.116
+        },
+        "Agility": {
+          "flat": 16,
+          "percent": 0.113
+        }
+      }
+    }
+  }
+}

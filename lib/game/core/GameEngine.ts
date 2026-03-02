@@ -10,7 +10,12 @@ import { RenderManager } from "./RenderManager";
 import { ItemDrop } from "../entities/ItemDrop";
 import { Item } from "../entities/Item";
 import { getZoneConfig } from "../config/zones";
-import { InventoryManager } from "./InventoryManager";
+import { InventoryManager } from './InventoryManager';
+import { StorageManager } from './StorageManager';
+import { VillageManager } from "./VillageManager";
+import { Monster } from "../entities/monster/Monster";
+import { SaveManager } from "../systems/SaveManager";
+import { calcMonsterExp, LevelSystem } from "../systems/LevelSystem";
 
 /**
  * 게임 엔진 클래스
@@ -18,6 +23,7 @@ import { InventoryManager } from "./InventoryManager";
  * 책임: 시스템 초기화·조율 + 게임 루프 실행
  * 플레이어 로직 → PlayerManager
  * 몬스터 로직 → MonsterManager
+ * 마을 NPC 로직 → VillageManager
  */
 export class GameEngine {
   // Canvas & Context
@@ -35,9 +41,11 @@ export class GameEngine {
   private monsterManager: MonsterManager;
   private renderManager: RenderManager;
   private inventoryManager: InventoryManager;
+  private storageManager: StorageManager;
   private combatTextManager: CombatTextManager;
+  private villageManager: VillageManager;
 
-  // 편의 접근자 (RenderManager → player 접근이 필요한 곳에서 사용)
+  // 편의 접근자
   private get player(): Player {
     return this.playerManager.player;
   }
@@ -61,14 +69,37 @@ export class GameEngine {
   private fadeTarget: number = 0;
   private isTransitioning: boolean = false;
 
+  // ── Portal System ────────────────────────────────────────────────────────
+  /** V키로 생성된 임시 포털 (플레이어 위치 기준) */
+  private playerPortal: {
+    x: number; y: number;
+    width: number; height: number;
+    targetZoneId: number; targetX: number; targetY: number;
+    /** 마을로 갈 때 저장된 플레이어의 원래 zone 1 위치 */
+    returnX?: number; returnY?: number;
+  } | null = null;
+
+  /** 마을에서 Zone 1으로 돌아갈 때 복원할 몬스터 스냅샷 */
+  private savedMonsters: Monster[] = [];
+  /** 마을에서 복귀할 Zone의 포털 귀환 위치 */
+  private savedReturnX: number = 0;
+  private savedReturnY: number = 0;
+  /** 마을 이동 직전 전투 존 ID (복귀 포털에서만 사용) */
+  private savedReturnZone: number = 1;
+
+  /** 포털 시각 효과용 애니메이션 타이머 */
+  private portalAnimTimer: number = 0;
+
+  /** 자동저장 타이머 (60초마다) */
+  private autoSaveTimer: number = 0;
+  private readonly AUTO_SAVE_INTERVAL = 60;  // 초
+
   // ─────────────────────────────────────────────────────
   //  STEP 1: 생성자 — 기본 시스템 초기화
   // ─────────────────────────────────────────────────────
 
   constructor(canvas: HTMLCanvasElement) {
-    console.log(
-      "🎮 [STEP 1] GameEngine Constructor - Initializing core systems...",
-    );
+    console.log("🎮 [STEP 1] GameEngine Constructor - Initializing core systems...");
 
     this.canvas = canvas;
     this.ctx = this.initializeContext(canvas);
@@ -86,8 +117,10 @@ export class GameEngine {
     // 매니저 초기화
     this.renderManager = new RenderManager(canvas, this.resourceLoader);
     this.inventoryManager = new InventoryManager(player, canvas);
+    this.storageManager = new StorageManager(player, canvas);
     this.monsterManager = new MonsterManager(this.ZoneMap, this.resourceLoader);
     this.combatTextManager = new CombatTextManager();
+    this.villageManager = new VillageManager(player, this.combatTextManager, canvas);
     this.playerManager = new PlayerManager(
       player,
       this.ZoneMap,
@@ -100,7 +133,6 @@ export class GameEngine {
 
     // 입력 설정 (playerManager 생성 후)
     this.inputManager = this.setupInputManager();
-
     this.setupWindowEvents();
 
     console.log("✅ [STEP 1] Core systems initialized");
@@ -119,18 +151,9 @@ export class GameEngine {
     await this.loadImageResources(zoneConfig);
     await this.loadMapData(zoneConfig);
 
-    // 플레이어 스프라이트 연결 (ZoneMap을 zone 충돌 경계로 전달)
     this.playerManager.initialize(this.ZoneMap);
 
-    // 몬스터 스폰 + fight 스프라이트 연결
-    this.monsterManager.spawnInitialMonsters(
-      zoneConfig,
-      this.player.position,
-    );
-    const fightImg = this.resourceLoader.getImage("fight");
-    if (fightImg) {
-      this.monsterManager.monsters.forEach((m) => m.setFightImage(fightImg));
-    }
+    this.monsterManager.spawnInitialMonsters(zoneConfig, this.player.position);
 
     this.finalizeGameSetup(zoneConfig);
 
@@ -165,7 +188,8 @@ export class GameEngine {
 
     const imageMap: Record<string, string> = { ...zoneConfig.assetConfig };
     zoneConfig.monsters.forEach((m: any) => {
-      imageMap[m.id] = m.imagePath;
+      if (m.moveImagePath) imageMap[`${m.id}_move`] = m.moveImagePath;
+      if (m.attackImagePath) imageMap[`${m.id}_attack`] = m.attackImagePath;
     });
 
     await this.resourceLoader.loadImages(imageMap);
@@ -178,15 +202,14 @@ export class GameEngine {
     console.log("  🗺️  [STEP 2-2] Loading map data...");
 
     try {
-      const res = await fetch(`/assets/zone-${this.currentZone}/map/map-data.json`);
+      // 마을(zone-99)는 /assets/village/map/ 경로 사용
+      const mapPath = this.currentZone === 99
+        ? `/assets/village/map/map-data.json`
+        : `/assets/zone-${this.currentZone}/map/map-data.json`;
+
+      const res = await fetch(mapPath);
       if (!res.ok) throw new Error("Map json not found");
       const jsonMap = await res.json();
-      console.log(
-        "  📄 External map data loaded:",
-        jsonMap.width,
-        "x",
-        jsonMap.height,
-      );
       this.ZoneMap.loadMapData(jsonMap.tiles, jsonMap.width, jsonMap.height, {
         polygonsAreObstacles: !!jsonMap.polygonsAreObstacles,
         obstacleTiles: jsonMap.obstacleTiles ?? [],
@@ -195,7 +218,9 @@ export class GameEngine {
     } catch {
       console.warn("  ⚠️ Using default config map data");
       const md = zoneConfig.mapData;
-      this.ZoneMap.loadMapData(md.tiles, md.width, md.height);
+      if (md.tiles && md.tiles.length > 0) {
+        this.ZoneMap.loadMapData(md.tiles, md.width, md.height);
+      }
     }
 
     // 미니맵 설정
@@ -221,7 +246,6 @@ export class GameEngine {
     if (mapImg && worldSize)
       miniMap.setMapImage(mapImg, worldSize.width, worldSize.height);
 
-    // 오픈월드: 랜덤 시작 위치 (충돌 오프셋 동일하게 적용해 경계 끼임 방지)
     if (zoneConfig.openWorldMapConfig) {
       const collisionYOffset = zoneConfig.gameplayConfig?.collisionYOffset ?? 80;
       const startPos = this.ZoneMap.getRandomWalkablePosition(collisionYOffset, 100);
@@ -238,7 +262,6 @@ export class GameEngine {
     console.log("  🎯 [STEP 2-5] Finalizing game setup...");
     this.state = "ready";
 
-    // 존 모드일 경우 카메라 바운더리와 기준 뷰 사이즈 적용
     const owConfig = zoneConfig.openWorldMapConfig;
     if (owConfig) {
       if (owConfig.mapType === 'zone') {
@@ -252,7 +275,7 @@ export class GameEngine {
         );
       } else {
         this.camera.isZoneMode = false;
-        this.camera.viewSize = 2048; // 심리스 디폴트
+        this.camera.viewSize = 2048;
         this.camera.bounds = null;
       }
     }
@@ -287,21 +310,46 @@ export class GameEngine {
 
     this.renderManager.updateFPS(currentTime);
     this.update(currentTime);
-    this.renderManager.render(
+
+    // [Layer 1] 월드 렌더 (맵 배경 + 엔티티 + 전투텍스트)
+    this.renderManager.renderWorld(
       this.ZoneMap,
       this.camera,
       this.player,
       this.monsterManager.monsters,
       this.items,
-      this.state,
-      this.inventoryManager,
       this.combatTextManager,
     );
+
+    // [Layer 2] 마을 NPC — 월드 위, 인벤토리 아래
+    if (this.currentZone === 99) {
+      this.villageManager.render(this.ctx, this.camera);
+    }
+    // 제거된 inventory, storage render 블록
+
+    // [Layer 2] 플레이어 포털 — 월드 위, 인벤토리 아래
+    if (this.playerPortal) {
+      this.renderPlayerPortal();
+    }
+
+    // [Layer 3] 인벤토리/HUD (최상위)
+    this.renderManager.renderOverlay(
+      this.ZoneMap,
+      this.camera,
+      this.player,
+      this.monsterManager.monsters,
+      this.state,
+      this.inventoryManager,
+    );
+
+    if (this.player.isStorageOpen) {
+      this.storageManager.render(this.ctx, this.resourceLoader);
+    }
 
     // 페이드 인/아웃 렌더링
     if (this.fadeAlpha > 0) {
       this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.ctx.fillStyle = `rgba(0, 0, 0, ${this.fadeAlpha})`;
       this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
       this.ctx.restore();
@@ -309,7 +357,7 @@ export class GameEngine {
 
     // 페이드 애니메이션 진행
     if (this.fadeAlpha !== this.fadeTarget) {
-      const fadeSpeed = this.deltaTime * 2.0; // 0.5초 경과
+      const fadeSpeed = this.deltaTime * 2.0;
       if (this.fadeAlpha < this.fadeTarget) {
         this.fadeAlpha = Math.min(this.fadeTarget, this.fadeAlpha + fadeSpeed);
       } else {
@@ -321,7 +369,9 @@ export class GameEngine {
   };
 
   private update(currentTime: number): void {
-    // ── 플레이어 업데이트 (PlayerManager 위임) ───────
+    this.portalAnimTimer += this.deltaTime;
+
+    // ── 플레이어 업데이트 ───────
     this.items = this.playerManager.update(
       this.deltaTime,
       this.inputManager,
@@ -332,32 +382,50 @@ export class GameEngine {
     // 아이템 물리 업데이트
     this.items.forEach((item) => item.update(this.deltaTime));
 
-    // ── 몬스터 업데이트 (MonsterManager 위임) ────────
+    // ── 마을 NPC 업데이트 ───────
+    if (this.currentZone === 99) {
+      this.villageManager.update(this.deltaTime);
+    }
+
+    // ── 몬스터 업데이트 ────────
     const config = getZoneConfig(this.currentZone);
 
-    const deadMonsters = this.monsterManager.removeDeadMonsters();
-    deadMonsters.forEach((m) => {
-      const dropped = Item.createRandom(m.position.x, m.position.y);
-      if (dropped) this.items.push(dropped.drop(m.position.x, m.position.y));
-    });
+    if (this.currentZone !== 99) {
+      const deadMonsters = this.monsterManager.removeDeadMonsters();
+      deadMonsters.forEach((m) => {
+        // 아이템 드랍
+        const dropped = Item.createRandom(m.position.x, m.position.y, this.currentZone);
+        if (dropped) this.items.push(dropped.drop(m.position.x, m.position.y));
 
-    this.monsterManager.updateAll(this.deltaTime, this.player.position);
-    this.monsterManager.handleRespawn(
-      config,
-      this.player.position,
-      currentTime,
-    );
+        // 경험치 지급
+        const monsterLevel = (m as any).config?.level ?? 1;
+        const exp = calcMonsterExp(monsterLevel, this.player.levelSystem.level);
+        const prevLevel = this.player.levelSystem.level;
+        this.player.gainExp(exp);
+        this.combatTextManager.add(m.position.x, m.position.y - 60, `+${exp} EXP`, 'heal');
 
-    // 몬스터-플레이어 충돌 밀어내기
-    this.monsterManager.monsters.forEach((monster) => {
-      monster.checkPlayerCollision(
-        this.player.position.x,
-        this.player.position.y,
-      );
-      this.monsterManager.monsters.forEach((other) => {
-        if (monster !== other) monster.resolveMonsterCollision(other);
+        // 레벨업 알림
+        if (this.player.levelSystem.level > prevLevel) {
+          this.combatTextManager.add(
+            this.player.position.x,
+            this.player.position.y - 120,
+            `✦ LEVEL UP! Lv.${this.player.levelSystem.level}`,
+            'critical'
+          );
+        }
       });
-    });
+
+      this.monsterManager.updateAll(this.deltaTime, this.player.position);
+      this.monsterManager.handleRespawn(config, this.player.position, currentTime);
+
+      // 몬스터-플레이어 충돌 밀어내기
+      this.monsterManager.monsters.forEach((monster) => {
+        monster.checkPlayerCollision(this.player.position.x, this.player.position.y);
+        this.monsterManager.monsters.forEach((other) => {
+          if (monster !== other) monster.resolveMonsterCollision(other);
+        });
+      });
+    }
 
     // ── 카메라 & 타일맵 ───────────────────────────────
     this.camera.follow(this.player.position);
@@ -366,44 +434,132 @@ export class GameEngine {
     // ── 기타 시스템 ─────────────────────────────────────
     this.combatTextManager.update(this.deltaTime);
 
-    // ── 존 전환 (포탈) 처리 ──
+    // 레벨업 타이머 감소
+    if (this.player.levelUpTimer > 0) {
+      this.player.levelUpTimer -= this.deltaTime;
+    }
+
+    // 자동 저장
+    this.autoSaveTimer += this.deltaTime;
+    if (this.autoSaveTimer >= this.AUTO_SAVE_INTERVAL) {
+      this.autoSaveTimer = 0;
+      this.autoSave();
+    }
+
+    // ── 존 전환 포탈 처리 ──
     const openWorldMapConfig = config.openWorldMapConfig;
     if (openWorldMapConfig?.mapType === 'zone' || openWorldMapConfig?.portals) {
+      // zone config 포탈
       this.checkPortals(openWorldMapConfig.portals);
+      // 플레이어가 V키로 생성한 임시 포탈
+      if (this.playerPortal) {
+        this.checkSinglePortal(this.playerPortal);
+      }
     }
+  }
+
+  // ─────────────────────────────────────────────────────
+  //  포털 시스템
+  // ─────────────────────────────────────────────────────
+
+  /**
+   * V키 입력: 플레이어 위치에 마을 포털 생성
+   * - Zone 1에서 V키 → 마을(99) 포털 생성 + 현재 몬스터 저장
+   * - 마을(99)에서는 이미 config 포탈이 zone 1 복귀 처리
+   */
+  private createPlayerPortal(): void {
+    if (this.isTransitioning) return;
+
+    if (this.currentZone === 99) {
+      // 마을에서는 V키 불필요 (이미 하단 포탈 존재)
+      return;
+    }
+
+    // 이미 포탈이 있으면 제거 (토글)
+    if (this.playerPortal) {
+      this.playerPortal = null;
+      return;
+    }
+
+    const px = this.player.position.x;
+    const py = this.player.position.y;
+    const portalW = 80;
+    const portalH = 120;
+
+    // 포털을 플레이어 우측 100px에 배치
+    const portalX = px + 100;
+    const portalY = py - portalH / 2;
+
+    this.playerPortal = {
+      x: portalX,
+      y: portalY,
+      width: portalW,
+      height: portalH,
+      targetZoneId: 99,
+      targetX: 0,
+      targetY: -100,
+      returnX: px,
+      returnY: py,
+    };
+
+    // 현재 몬스터 상태 스냅샷 + 귀환 존 저장
+    this.savedMonsters = [...this.monsterManager.monsters];
+    this.savedReturnX = px;
+    this.savedReturnY = py;
+    this.savedReturnZone = this.currentZone;  // ← 직전 전투 존 기억
+
+    console.log("🔵 [Portal] Village portal created at", portalX, portalY);
+    this.combatTextManager.add(px, py - 100, "✦ 마을 포털 개방!", "heal");
   }
 
   private checkPortals(portals?: any[]): void {
     if (!portals || this.isTransitioning) return;
     for (const portal of portals) {
-      if (
-        this.player.position.x >= portal.x &&
-        this.player.position.x <= portal.x + portal.width &&
-        this.player.position.y >= portal.y &&
-        this.player.position.y <= portal.y + portal.height
-      ) {
-        console.log(`Portal hit! Transitioning to zone ${portal.targetZoneId}`);
-        // Prevent multiple triggers
-        this.state = "transitioning" as any;
-        this.isTransitioning = true;
-        this.transitionToZone(portal.targetZoneId, portal.targetX, portal.targetY);
-        break;
-      }
+      this.checkSinglePortal(portal);
     }
   }
 
-  private async transitionToZone(zoneId: number, targetX: number, targetY: number): Promise<void> {
+  private checkSinglePortal(portal: any): void {
+    if (this.isTransitioning) return;
+    if (
+      this.player.position.x >= portal.x &&
+      this.player.position.x <= portal.x + portal.width &&
+      this.player.position.y >= portal.y &&
+      this.player.position.y <= portal.y + portal.height
+    ) {
+      const isReturnFromVillage = this.currentZone === 99;
+
+      // 마을에서 복귀: 직전 전투 존으로 이동 (고정 zone 1 아님)
+      const targetZoneId = isReturnFromVillage
+        ? (this.savedReturnZone || portal.targetZoneId)
+        : portal.targetZoneId;
+
+      console.log(`Portal hit! Transitioning to zone ${targetZoneId}`);
+      this.state = "transitioning" as any;
+      this.isTransitioning = true;
+
+      this.transitionToZone(
+        targetZoneId,
+        portal.targetX,
+        portal.targetY,
+        isReturnFromVillage
+      );
+    }
+  }
+
+  private async transitionToZone(
+    zoneId: number,
+    targetX: number,
+    targetY: number,
+    isReturnFromVillage: boolean = false
+  ): Promise<void> {
     console.log(`Loading new zone: Zone ${zoneId}...`);
 
-    // 페이드 아웃 시작
     this.fadeTarget = 1;
-
-    // 페이드 아웃 완료 대기
     await new Promise(resolve => setTimeout(resolve, 500));
 
     this.currentZone = zoneId;
 
-    // 기존 맵 데이터와 그래픽 교체
     const config = getZoneConfig(zoneId);
     if (!config) {
       console.error("Target zone not found!");
@@ -415,18 +571,43 @@ export class GameEngine {
 
     await this.loadImageResources(config);
 
-    this.monsterManager.monsters = [];
-    this.monsterManager.spawnInitialMonsters(config, { x: targetX, y: targetY } as any);
-    const fightImg = this.resourceLoader.getImage("fight");
-    if (fightImg) {
-      this.monsterManager.monsters.forEach((m) => m.setFightImage(fightImg));
+    // ── 마을에서 돌아왔을 때: 저장된 몬스터 복원 ──
+    if (isReturnFromVillage && this.savedMonsters.length > 0) {
+      this.monsterManager.monsters = this.savedMonsters.filter(m => !m.isDead);
+      this.savedMonsters = [];
+      console.log(`✅ [Portal] Restored ${this.monsterManager.monsters.length} monsters from village save`);
+    } else if (!isReturnFromVillage && zoneId !== 99) {
+      // 일반 존 전환: 새로 스폰
+      this.monsterManager.monsters = [];
+      this.monsterManager.resetSpawnState();
+      this.monsterManager.spawnInitialMonsters(config, { x: targetX, y: targetY } as any);
+    } else if (zoneId === 99) {
+      // 마을로 이동: 몬스터 없음
+      this.monsterManager.monsters = [];
     }
 
-    this.player.position.x = targetX;
-    this.player.position.y = targetY;
+    // 플레이어 위치 이동
+    // 마을에서 돌아오면 저장된 귀환 위치 우선
+    if (isReturnFromVillage && (this.savedReturnX !== 0 || this.savedReturnY !== 0)) {
+      this.player.position.x = this.savedReturnX;
+      this.player.position.y = this.savedReturnY;
+      // 귀환 후 임시 포탈 제거
+      this.playerPortal = null;
+      this.savedReturnX = 0;
+      this.savedReturnY = 0;
+    } else {
+      this.player.position.x = targetX;
+      this.player.position.y = targetY;
+    }
 
     // 존 모드 갱신
     const owConfig = config.openWorldMapConfig;
+    this.ZoneMap = new ZoneMap(owConfig);
+    this.ZoneMap.setImages(this.resourceLoader.getImages());
+    await this.loadMapData(config);
+    this.player.setZoneMap(this.ZoneMap);
+    this.monsterManager.setZoneMap(this.ZoneMap);
+
     if (owConfig) {
       if (owConfig.mapType === 'zone') {
         this.camera.isZoneMode = true;
@@ -439,32 +620,86 @@ export class GameEngine {
         );
       } else {
         this.camera.isZoneMode = false;
-        this.camera.viewSize = 2048; // 심리스 디폴트
+        this.camera.viewSize = 2048;
         this.camera.bounds = null;
       }
       this.camera.setScaleToViewSize();
     }
     this.camera.follow(this.player.position, true);
-
     this.ZoneMap.updateVisibleTiles(this.camera);
 
-    // 페이드 인 시작
     this.fadeTarget = 0;
     this.state = "playing";
 
-    // 페이드 인 완료 대기
     await new Promise(resolve => setTimeout(resolve, 500));
     this.isTransitioning = false;
     this.lastFrameTime = performance.now();
   }
 
   // ─────────────────────────────────────────────────────
+  //  포털 시각화
+  // ─────────────────────────────────────────────────────
+
+  private renderPlayerPortal(): void {
+    if (!this.playerPortal) return;
+
+    const portal = this.playerPortal;
+    const screen = this.camera.worldToScreen(portal.x, portal.y);
+    const scale = this.camera.scale ?? 1;
+    const pw = portal.width * scale;
+    const ph = portal.height * scale;
+    const t = this.portalAnimTimer;
+
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // 포털 외부 글로우
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+    this.ctx.shadowColor = `rgba(80, 160, 255, ${0.6 + pulse * 0.4})`;
+    this.ctx.shadowBlur = 30 + pulse * 20;
+
+    // 포털 외곽 (긴 둥근 원 모양, 점선 제거)
+    const cx = screen.x + pw / 2;
+    const cy = screen.y + ph / 2;
+    const rx = pw / 2;
+    const ry = ph / 2;
+
+    this.ctx.beginPath();
+    this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+
+    // 포털 몸체 (신비로운 아쿠아 / 에메랄드 색상 변경)
+    const grad = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, ry);
+    grad.addColorStop(0, `rgba(50, 255, 180, ${0.4 + pulse * 0.2})`);
+    grad.addColorStop(1, `rgba(0, 150, 120, ${0.1 + pulse * 0.1})`);
+    this.ctx.fillStyle = grad;
+    this.ctx.fill();
+
+    // 부드러운 단선 테두리
+    this.ctx.strokeStyle = `rgba(100, 255, 200, ${0.8 + pulse * 0.2})`;
+    this.ctx.lineWidth = 2.5;
+    this.ctx.stroke();
+
+    // 포털 내부 소용돌이 효과 (타원형)
+    for (let i = 3; i >= 1; i--) {
+      const r_x = rx * (i / 3) * (0.8 + 0.2 * Math.sin(t * 2 + i));
+      const r_y = ry * (i / 3) * (0.8 + 0.2 * Math.sin(t * 2 + i));
+      const innerGrad = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, r_y);
+      innerGrad.addColorStop(0, `rgba(150, 255, 220, ${0.15 * i})`);
+      innerGrad.addColorStop(1, 'rgba(0, 200, 150, 0)');
+      this.ctx.fillStyle = innerGrad;
+      this.ctx.beginPath();
+      this.ctx.ellipse(cx, cy, r_x, r_y, 0, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+
+    this.ctx.restore();
+  }
+
+  // ─────────────────────────────────────────────────────
   //  헬퍼 / 이벤트 설정
   // ─────────────────────────────────────────────────────
 
-  private initializeContext(
-    canvas: HTMLCanvasElement,
-  ): CanvasRenderingContext2D {
+  private initializeContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to get 2D context");
     return ctx;
@@ -507,7 +742,6 @@ export class GameEngine {
 
     window.addEventListener("mousemove", (e) => {
       this.renderManager?.getMiniMap()?.handleMouseMove(e);
-      // 인벤토리 닫힌 상태의 아이콘 hover는 PlayerManager.update() → handleCursor() 에서 처리
     });
 
     window.addEventListener("mouseup", () => {
@@ -542,12 +776,42 @@ export class GameEngine {
       }
     });
 
+    // 마을 포털 생성 (V)
+    inputManager.onKeyDown("KeyV", () => {
+      if (this.state === "playing") {
+        this.createPlayerPortal();
+      }
+    });
+
+    // NPC 상호작용 (F)
+    inputManager.onKeyDown("KeyF", () => {
+      if (this.state === "playing" && this.currentZone === 99) {
+        const msg = this.villageManager.interact();
+        if (msg) {
+          this.villageManager.showMessage(msg);
+        }
+      }
+    });
+
     // 마우스 클릭
     inputManager.onMouseDown((e: MouseEvent) => {
-      // (인벤토리 아이콘이 UI 화면에서 제거되었으므로 클릭 토글 기능 제거)
+      if (this.player.isStorageOpen) {
+        const handled = this.storageManager.handleClick(e);
+        if (handled) return;
+      }
       if (this.player.isInventoryOpen) {
         const handled = this.inventoryManager.handleClick(e);
         if (handled) return;
+      } else {
+        const { x, y } = inputManager.getMousePosition();
+        const rect = this.canvas.getBoundingClientRect();
+        const localX = x - rect.left;
+        const localY = y - rect.top;
+        const iconRect = this.renderManager.interfaceManager.iconRects['inventory'];
+        if (iconRect && localX >= iconRect.x && localX <= iconRect.x + iconRect.w && localY >= iconRect.y && localY <= iconRect.y + iconRect.h) {
+          this.playerManager.toggleInventory();
+          return;
+        }
       }
     });
 
@@ -562,11 +826,9 @@ export class GameEngine {
     this.canvas.width = width * dpr;
     this.canvas.height = height * dpr;
 
-    // Reset transform to identity then scale correctly for high DPI
     this.ctx.resetTransform();
     this.ctx.scale(dpr, dpr);
 
-    // 카메라 및 게임 로직은 모두 논리적 크기 기반으로 동작
     this.camera.resize(width, height);
     this.camera.setScaleToViewSize();
   }
@@ -591,4 +853,78 @@ export class GameEngine {
     this.inputManager.destroy();
     this.resourceLoader.clear();
   }
+
+  // ─────────────────────────────────────────────────────
+  //  저장 / 로딩
+  // ─────────────────────────────────────────────────────
+
+  /** 자동 저장 (백그라운드) */
+  private autoSave(): void {
+    const sm = SaveManager.getInstance();
+    const equipment: Record<string, any> = {};
+    Object.entries(this.player.equipment).forEach(([k, item]) => {
+      if (item) equipment[k] = item.data;
+    });
+    sm.save({
+      version: 1,
+      savedAt: new Date().toISOString(),
+      player: {
+        level: this.player.levelSystem.level,
+        exp: this.player.levelSystem.currentExp,
+        hp: this.player.hp,
+        lastZone: this.currentZone,
+        lastX: Math.round(this.player.position.x),
+        lastY: Math.round(this.player.position.y),
+      },
+      inventory: this.player.inventory.items.map(i => i.data),
+      equipment,
+    });
+  }
+
+  /**
+   * 게임 로딩 시 저장 데이터 복원
+   * loadResources() 이후 호출
+   */
+  async loadSaveData(): Promise<boolean> {
+    const sm = SaveManager.getInstance();
+    const save = await sm.load();
+    if (!save) return false;
+    this.applyLoadedSave(save);
+    return true;
+  }
+
+  private applyLoadedSave(save: any): void {
+    const p = save.player;
+    if (!p) return;
+
+    // 레벨 / 경험치 복원
+    this.player.levelSystem = LevelSystem.deserialize({ level: p.level ?? 1, exp: p.exp ?? 0 });
+    this.player.hp = p.hp ?? this.player.maxHp;
+
+    // 마지막 위치 복원
+    this.player.position.x = p.lastX ?? 0;
+    this.player.position.y = p.lastY ?? 0;
+
+    // 인벤토리 복원
+    if (Array.isArray(save.inventory)) {
+      save.inventory.forEach((data: any) => {
+        this.player.inventory.add(new Item(data));
+      });
+    }
+
+    // 장비 복원
+    if (save.equipment && typeof save.equipment === 'object') {
+      Object.entries(save.equipment).forEach(([slot, data]: [string, any]) => {
+        if (data) {
+          (this.player.equipment as Record<string, any>)[slot] = new Item(data);
+        }
+      });
+    }
+
+    this.player.updateStats();
+    // 복원 후 hp 콜램프 (maxHp 업데이트 후)
+    if (this.player.hp > this.player.maxHp) this.player.hp = this.player.maxHp;
+    console.log(`📂 Save loaded. Level: ${this.player.levelSystem.level}`);
+  }
 }
+

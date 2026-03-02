@@ -3,7 +3,8 @@ import { SpriteAnimation } from '../../systems/SpriteAnimation'
 import { ZoneMap } from '../../systems/ZoneMap'
 import { getZoneConfig } from '../../config/zones'
 import type { MonsterDetailConfig, EntityStats } from '../../config/types'
-import { setupMonsterAnimations } from './MonsterAnimations'
+import { registerMonsterAnimations } from './MonsterAnimations'
+import { SoundManager } from '../../systems/SoundManager'
 
 export class Monster {
     public position: Vector2
@@ -78,17 +79,16 @@ export class Monster {
         // 반격 데미지 계산 (Might 기반)
         this.counterAttackDamage = Math.max(5, Math.round((this.stats.Might ?? 5) * Monster.COUNTER_DAMAGE_MUL * 3))
 
-        this.width = 110
-        this.height = 110
+        this.width = 130
+        this.height = 130
         this.speed = config.moveSpeed
         this.angle = 0
 
         this.spriteAnimation = new SpriteAnimation()
-        this.setupAnimations()
     }
 
-    private setupAnimations(): void {
-        setupMonsterAnimations(this.spriteAnimation)
+    public setupAnimations(): void {
+        registerMonsterAnimations(this.spriteAnimation, this.spriteImage, this.fightImage, this.config)
     }
 
     setSpriteImage(image: HTMLImageElement): void {
@@ -141,7 +141,7 @@ export class Monster {
                 this.isCounterAttacking = false
             }
             this.isMoving = false
-            this.spriteAnimation.play('monster_counter_attack')
+            this.spriteAnimation.play(`monster_attack_${this.direction}`)
             this.spriteAnimation.update(deltaTime)
             return
         }
@@ -260,6 +260,9 @@ export class Monster {
             this.hasDealtCounterDamage = false
             this.counterAttackDuration = Monster.COUNTER_DURATION
             this.counterAttackTimer = Monster.COUNTER_COOLDOWN
+            if (this.config.attackSoundPath) {
+                SoundManager.getInstance().playDirect(this.config.attackSoundPath)
+            }
             return true   // 반격 발동
         }
         return false
@@ -393,6 +396,9 @@ export class Monster {
                         this.hasDealtCounterDamage = false;
                         this.counterAttackDuration = Monster.COUNTER_DURATION;
                         this.counterAttackTimer = Monster.COUNTER_COOLDOWN;
+                        if (this.config.attackSoundPath) {
+                            SoundManager.getInstance().playDirect(this.config.attackSoundPath)
+                        }
                     }
                 }
             } else if (this.state === 'chase') {
@@ -470,7 +476,7 @@ export class Monster {
             ctx.shadowBlur = 24
         }
 
-        // 스프라이트 선택 (반격 중이면 fight.png 사용)
+        // 스프라이트 선택
         const useImage = (this.isCounterAttacking && this.fightImage?.complete)
             ? this.fightImage
             : this.spriteImage

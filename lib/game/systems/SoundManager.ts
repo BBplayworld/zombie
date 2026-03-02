@@ -36,4 +36,11 @@ export class SoundManager {
         audio.volume = this.volume;
         audio.play().catch(e => console.warn(`SoundFX play failed (${key}):`, e));
     }
+
+    public playDirect(path: string): void {
+        if (this.isMuted || this.volume === 0) return;
+        const audio = new Audio(path);
+        audio.volume = this.volume;
+        audio.play().catch(e => console.warn(`SoundFX play failed (${path}):`, e));
+    }
 }

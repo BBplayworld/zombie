@@ -50,6 +50,7 @@ export interface InventoryUIConfig {
     textStyles: {
         title: string
         label: string
+        desc: string
         value: string
         fontFamily: string
     }
@@ -58,31 +59,31 @@ export interface InventoryUIConfig {
 export const inventoryConfig: InventoryUIConfig = {
     position: {
         anchor: 'top-left',
-        x: -100,
-        y: 20
+        x: 90,
+        y: 60
     },
     window: {
-        width: 1024,
-        height: 1024
+        width: 680,
+        height: 680
     },
     statsArea: {
-        x: 260,
-        y: 110,
-        width: 250,
-        height: 482,
-        lineHeight: 25,
-        fontSize: 16,
-        titleFontSize: 20
+        x: 38,
+        y: 140,
+        width: 165,
+        height: 513,
+        lineHeight: 20,
+        fontSize: 13.5,
+        titleFontSize: 14
     },
     itemArea: {
-        x: 259,
-        y: 658,
-        width: 543,
-        height: 220,
-        cols: 10,
-        rows: 4,
-        slotSize: 47.5,
-        gap: 5
+        x: 485,
+        y: 135,
+        width: 174,
+        height: 477,
+        cols: 3,
+        rows: 7,
+        slotSize: 45,
+        gap: 10
     },
     equipmentArea: {
         x: 520,
@@ -91,17 +92,17 @@ export const inventoryConfig: InventoryUIConfig = {
         height: 482
     },
     closeButton: {
-        width: 50,
-        height: 50,
+        width: 30,
+        height: 30,
         margin: 10 // from top-right corner
     },
     equipmentSlots: {
-        'Helmet': { x: 625, y: 122, width: 64, height: 68 },
-        'Weapon': { x: 540, y: 187, width: 64, height: 64 },
-        'Shield': { x: 709, y: 191, width: 61, height: 62 },
-        'Armor': { x: 610, y: 272, width: 97, height: 122 },
-        'Boots': { x: 569, y: 447, width: 60, height: 60 },
-        'Ring': { x: 700, y: 451, width: 63, height: 58 }
+        'Helmet': { x: 296, y: 133, width: 42, height: 54 },
+        'Weapon': { x: 297, y: 205, width: 41, height: 51 },
+        'Shield': { x: 298, y: 276, width: 39, height: 51 },
+        'Armor': { x: 298, y: 346, width: 38, height: 48 },
+        'Boots': { x: 363, y: 413, width: 39, height: 50 },
+        'Ring': { x: 418, y: 413, width: 39, height: 50 }
     },
     tooltip: {
         width: 240,
@@ -113,7 +114,8 @@ export const inventoryConfig: InventoryUIConfig = {
     },
     textStyles: {
         title: '#ffaa00',
-        label: '#aaaaaa',
+        label: '#ffffffff',
+        desc: '#a1a1a1ff',
         value: '#d4af37',
         fontFamily: 'Crimson Text;serif'
     }

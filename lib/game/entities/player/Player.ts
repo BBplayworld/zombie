@@ -15,6 +15,7 @@ import {
 import { Item } from "../Item";
 import { SkillManager, SkillKey } from "./Skills";
 import { Inventory } from "../Inventory";
+import { LevelSystem } from "../../systems/LevelSystem";
 import {
   registerMoveAnimations,
   registerSpaceAnimations,
@@ -50,6 +51,14 @@ export class Player {
   public hpRegen: number = 0;
   private hpRegenTimer: number = 0;
 
+  // ─── 레벨 시스템 ─────────────────────────────────────────────────────────
+  public levelSystem: LevelSystem = new LevelSystem();
+  /** 레벨업 알림 표시용 타이머 */
+  public levelUpTimer: number = 0;
+  public lastLevelUpLevel: number = 0;
+  /** 레벨업 콜백 (CombatTextManager 연동용) */
+  public onLevelUp?: (level: number) => void;
+
   // ─── 스탯 / 장비 ─────────────────────────────────────────────────────────
   public stats: EntityStats = {
     Vigor: 20,
@@ -61,8 +70,10 @@ export class Player {
   public damage: number = 10;
   public critChance: number = 0;
   public inventory: Inventory = new Inventory();
+  public warehouse: Inventory = new Inventory();
   public equipment: Partial<Record<ItemType, Item>> = {};
   public isInventoryOpen: boolean = false;
+  public isStorageOpen: boolean = false;
 
   // ─── 전투 상태 ───────────────────────────────────────────────────────────
   public isAttacking: boolean = false;
@@ -121,7 +132,7 @@ export class Player {
   private zoneMap: ZoneMap | null = null;
 
   // ─── 상수 ────────────────────────────────────────────────────────────────
-  static readonly SIZE = 130;
+  static readonly SIZE = 140;
   static readonly BASE_SPEED = 380;
 
   // =========================================================================
@@ -215,8 +226,15 @@ export class Player {
   // =========================================================================
 
   updateStats(): void {
+    const lv = this.levelSystem?.level ?? 1;
+    const lvBonus = Math.max(0, (lv - 1) * 2); // 레벨당 +2 Vigor, Might 등 기본 상승
+
     const baseStats: EntityStats = {
-      Vigor: 10, Spirit: 10, Might: 10, Agility: 10, Luck: 10,
+      Vigor: 10 + lvBonus,
+      Spirit: 10 + Math.floor(lvBonus * 0.5),
+      Might: 10 + lvBonus,
+      Agility: 10 + Math.floor(lvBonus * 0.5),
+      Luck: 10 + Math.floor(lvBonus * 0.3),
     };
     const totals: Record<StatType, number> = { ...baseStats };
     const percents: Record<StatType, number> = {
@@ -246,6 +264,28 @@ export class Player {
     this.damage = 10 + this.stats.Might * 2;
     this.critChance = this.stats.Luck * 0.01;
     this.hpRegen = this.stats.Spirit * 0.5;
+  }
+
+  /**
+   * 경험치 획득 - 레벨업 시 스탯 자동 증가
+   */
+  gainExp(amount: number): void {
+    const results = this.levelSystem.gainExp(amount);
+    results.forEach(r => {
+      // 레벨업 스탯 적용
+      this.stats.Vigor += r.statGains.Vigor;
+      this.stats.Spirit += r.statGains.Spirit;
+      this.stats.Might += r.statGains.Might;
+      this.stats.Agility += r.statGains.Agility;
+      this.stats.Luck += r.statGains.Luck;
+      this.updateStats();
+      // 레벨업 시 HP 전체 회복
+      this.hp = this.maxHp;
+      this.levelUpTimer = 3.0;
+      this.lastLevelUpLevel = r.newLevel;
+      this.onLevelUp?.(r.newLevel);
+      console.log(`🌟 LEVEL UP! -> ${r.newLevel}`);
+    });
   }
 
   getDamage(): { amount: number; isCrit: boolean } {
@@ -283,12 +323,9 @@ export class Player {
   // 인벤토리 / 아이템
   // =========================================================================
 
-  addItem(itemData: ItemData): void {
+  addItem(itemData: ItemData): boolean {
     const item = new Item(itemData);
-    if (this.inventory.add(item)) {
-      const type = item.data.type;
-      if (item.isEquipment() && !this.equipment[type]) this.equipItem(item);
-    }
+    return this.inventory.add(item);
   }
 
   equipItem(item: Item): void {

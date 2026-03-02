@@ -65,11 +65,7 @@ const DAMAGE_IMAGE_URLS = {
 
 /** [Layer 2] space 평타 이펙트 프레임 경로 (skills/space/*.png) */
 const SPACE_EFFECT_URLS = [
-    '/assets/main/player/skills/space/q-1.png',
-    '/assets/main/player/skills/space/q-2.png',
-    '/assets/main/player/skills/space/q-3.png',
-    '/assets/main/player/skills/space/q-4.png',
-    '/assets/main/player/skills/space/q-5.png',
+    ''
 ];
 
 /** 스킬별 애니메이션 재생 속도 (FPS) */
@@ -303,14 +299,29 @@ export class PlayerManager {
         });
     }
 
+    private lastFullMsgTime: number = 0;
+
     private pickUpItems(items: ItemDrop[]): ItemDrop[] {
+        const now = Date.now();
         return items.filter((item) => {
             const dx = this.player.position.x - item.position.x;
             const dy = this.player.position.y - item.position.y;
             if (Math.sqrt(dx * dx + dy * dy) < ITEM_PICK_RANGE) {
-                this.player.addItem(item.data);
-                item.isCollected = true;
-                return false;
+                if (this.player.addItem(item.data)) {
+                    item.isCollected = true;
+                    return false;
+                } else {
+                    if (now - this.lastFullMsgTime > 2000) {
+                        this.combatTextManager.add(
+                            this.player.position.x,
+                            this.player.position.y - 60,
+                            "인벤토리가 가득 찼습니다!",
+                            "player_hit"
+                        );
+                        this.lastFullMsgTime = now;
+                    }
+                    return true; // Keep the item on the ground
+                }
             }
             return true;
         });

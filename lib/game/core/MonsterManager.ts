@@ -19,6 +19,17 @@ export class MonsterManager {
         this.resourceLoader = resourceLoader
     }
 
+    /** 존 전환 시 ZoneMap 교체 (GameEngine에서 호출) */
+    setZoneMap(zoneMap: ZoneMap): void {
+        this.ZoneMap = zoneMap
+    }
+
+    /** 새 존 진입 시 스폰 상태 초기화 (다시 spawnInitialMonsters 허용) */
+    resetSpawnState(): void {
+        this.initialSpawnComplete = false
+        this.lastRegenCheckTime = 0
+    }
+
     /**
      * 몬스터 초기 스폰
      */
@@ -177,8 +188,13 @@ export class MonsterManager {
         const monster = new Monster(uniqueId, x, y, mConfig)
         monster.setZoneMap(this.ZoneMap)
 
-        const monsterImage = this.resourceLoader.getImage(mConfig.id)
-        if (monsterImage) monster.setSpriteImage(monsterImage)
+        const moveImage = this.resourceLoader.getImage(`${mConfig.id}_move`)
+        if (moveImage) monster.setSpriteImage(moveImage)
+
+        const attackImage = this.resourceLoader.getImage(`${mConfig.id}_attack`)
+        if (attackImage) monster.setFightImage(attackImage)
+
+        monster.setupAnimations() // Initialize animations after images are linked
 
         return monster
     }
